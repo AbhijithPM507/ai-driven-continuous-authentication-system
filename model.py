@@ -1,29 +1,42 @@
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
+from sklearn.svm import OneClassSVM
 from sklearn.preprocessing import StandardScaler
-import joblib
 import pandas as pd
+import joblib
+import numpy as np
 
+# Load dataset
 df = pd.read_csv("final_ml_dataset.csv")
 
-X = df.drop(columns=["label"])
-y = df["label"]
+# Keep only genuine user data
+genuine_df = df[df["label"] == 0].copy()
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
+# Drop label
+X = genuine_df.drop(columns=["label"])
+
+# Replace infinite values
+X.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+# Fill NaN values
+X.fillna(0, inplace=True)
+
+# OPTIONAL (better): remove rows that still contain NaN
+# X = X.dropna()
 
 # Scale
 scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+X_scaled = scaler.fit_transform(X)
 
-# Train
-model = RandomForestClassifier()
-model.fit(X_train_scaled, y_train)
+# Train One-Class SVM
+model = OneClassSVM(
+    kernel="rbf",
+    gamma="scale",
+    nu=0.05
+)
+
+model.fit(X_scaled)
 
 # Save
 joblib.dump(model, "behavior_model.pkl")
 joblib.dump(scaler, "scaler.pkl")
 
-print("Saved successfully.")
+print("One-Class model trained successfully.")
