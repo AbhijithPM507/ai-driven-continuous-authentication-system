@@ -1,112 +1,103 @@
-# utils/feature_extractor.py
-
 import pandas as pd
 import numpy as np
 from datetime import timedelta
 
-WINDOW_SIZE = 60  # seconds
+WINDOW_SIZE = 60
 
-MIN_KEY = 10
-MIN_MOUSE = 20
-MIN_CLICK = 5
-
-
-def extract_features():
-
-    try:
-        df = pd.read_csv("data/live_session.csv")
-    except:
-        return None
+def extract_features(df):
 
     if df.empty:
-        return None
+        return None, None, None
 
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    # Convert timestamp safely
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
 
-    now = df["timestamp"].max()
-    window_start = now - timedelta(seconds=WINDOW_SIZE)
+    df = df.sort_values("timestamp")
 
-    df = df[df["timestamp"] >= window_start].copy()
+    end_time = df["timestamp"].max()
+    start_time = end_time - timedelta(seconds=WINDOW_SIZE)
 
-    if len(df) == 0:
-        return None
+    window = df[df["timestamp"] >= start_time].copy()
 
-    # =========================
+    if len(window) < 10:
+        return None, None, None
+
+    # =============================
     # KEYSTROKE FEATURES
-    # =========================
-    key_df = df[df["event_type"] == "key"].copy()
+    # =============================
+    key_df = window[window["event_type"] == "key"].copy()
 
-    if len(key_df) < MIN_KEY:
-        return None
+    if len(key_df) >= 10:
 
-    key_df["flight"] = key_df["timestamp"].diff().dt.total_seconds()
+        key_df["flight"] = key_df["timestamp"].diff().dt.total_seconds()
 
-    mean_hold = key_df["key_dwell"].mean()
-    std_hold = key_df["key_dwell"].std()
-    mean_flight = key_df["flight"].mean()
-    std_flight = key_df["flight"].std()
-    typing_speed = len(key_df) / WINDOW_SIZE
+        key_features = pd.DataFrame([{
+            "mean_hold": key_df["key_dwell"].mean(),
+            "std_hold": key_df["key_dwell"].std(),
+            "mean_flight": key_df["flight"].mean(),
+            "std_flight": key_df["flight"].std(),
+            "typing_speed": len(key_df) / WINDOW_SIZE
+        }])
 
-    keystroke_features = [[
-        mean_hold,
-        std_hold if not np.isnan(std_hold) else 0,
-        mean_flight if not np.isnan(mean_flight) else 0,
-        std_flight if not np.isnan(std_flight) else 0,
-        typing_speed
-    ]]
+    else:
+        key_features = None
 
-    # =========================
-    # MOUSE FEATURES
-    # =========================
-    mouse_df = df[df["event_type"] == "move"].copy()
+    # =============================
+    # MOUSE MOVE FEATURES
+    # =============================
+    mouse_df = window[window["event_type"] == "move"].copy()
 
-    if len(mouse_df) < MIN_MOUSE:
-        return None
+    if len(mouse_df) >= 20:
 
-    mouse_df["dx"] = mouse_df["mouse_x"].diff()
-    mouse_df["dy"] = mouse_df["mouse_y"].diff()
-    mouse_df["dt"] = mouse_df["timestamp"].diff().dt.total_seconds()
+        mouse_df["dx"] = mouse_df["mouse_x"].diff()
+        mouse_df["dy"] = mouse_df["mouse_y"].diff()
+        mouse_df["dt"] = mouse_df["timestamp"].diff().dt.total_seconds()
 
-    mouse_df["velocity"] = np.sqrt(mouse_df["dx"]**2 + mouse_df["dy"]**2) / mouse_df["dt"]
-    mouse_df["acceleration"] = mouse_df["velocity"].diff() / mouse_df["dt"]
+        mouse_df["dt"] = mouse_df["dt"].replace(0, 0.0001)
 
-    mean_velocity = mouse_df["velocity"].mean()
-    std_velocity = mouse_df["velocity"].std()
-    mean_acceleration = mouse_df["acceleration"].mean()
-    std_acceleration = mouse_df["acceleration"].std()
+        mouse_df["velocity"] = np.sqrt(
+            mouse_df["dx"]**2 + mouse_df["dy"]**2
+        ) / mouse_df["dt"]
 
-    movement_density = len(mouse_df) / WINDOW_SIZE
+        mouse_df["acceleration"] = mouse_df["velocity"].diff() / mouse_df["dt"]
 
-    mouse_features = [[
-        mean_velocity if not np.isnan(mean_velocity) else 0,
-        std_velocity if not np.isnan(std_velocity) else 0,
-        mean_acceleration if not np.isnan(mean_acceleration) else 0,
-        std_acceleration if not np.isnan(std_acceleration) else 0,
-        movement_density
-    ]]
+        mouse_features = pd.DataFrame([{
+            "mean_velocity": mouse_df["velocity"].mean(),
+            "std_velocity": mouse_df["velocity"].std(),
+            "mean_acceleration": mouse_df["acceleration"].mean(),
+            "std_acceleration": mouse_df["acceleration"].std(),
+            "movement_density": len(mouse_df) / WINDOW_SIZE
+        }])
 
-    # =========================
+    else:
+        mouse_features = None
+
+    # =============================
     # CLICK FEATURES
-    # =========================
-    click_df = df[df["event_type"] == "click"].copy()
+    # =============================
+    click_df = window[window["event_type"] == "click"].copy()
 
-    if len(click_df) < MIN_CLICK:
-        return None
+    if len(click_df) >= 5:
 
-    click_df["interval"] = click_df["timestamp"].diff().dt.total_seconds()
+        click_df["interval"] = click_df["timestamp"].diff().dt.total_seconds()
 
-    mean_interval = click_df["interval"].mean()
-    std_interval = click_df["interval"].std()
-    click_rate = len(click_df) / WINDOW_SIZE
+        click_features = pd.DataFrame([{
+            "mean_interval": click_df["interval"].mean(),
+            "std_interval": click_df["interval"].std(),
+            "click_rate": len(click_df) / WINDOW_SIZE
+        }])
 
-    click_features = [[
-        mean_interval if not np.isnan(mean_interval) else 0,
-        std_interval if not np.isnan(std_interval) else 0,
-        click_rate
-    ]]
+    else:
+        click_features = None
 
-    return {
-        "keystroke": keystroke_features,
-        "mouse": mouse_features,
-        "click": click_features
-    }
+    # Replace NaN safely
+    if key_features is not None:
+        key_features = key_features.fillna(0)
+
+    if mouse_features is not None:
+        mouse_features = mouse_features.fillna(0)
+
+    if click_features is not None:
+        click_features = click_features.fillna(0)
+
+    return key_features, mouse_features, click_features

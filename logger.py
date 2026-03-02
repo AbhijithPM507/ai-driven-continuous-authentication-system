@@ -1,82 +1,51 @@
-# logger.py
-
+import csv
 import os
 import time
-import csv
 from datetime import datetime
 from pynput import keyboard, mouse
 
-# ===============================
-# CONFIG
-# ===============================
+DATA_FILE = "data/live_session.csv"
 
-DATA_FOLDER = "data"
-LOG_FILE = os.path.join(DATA_FOLDER, "live_session.csv")
+os.makedirs("data", exist_ok=True)
 
-# ===============================
-# SETUP FILE
-# ===============================
-
-if not os.path.exists(DATA_FOLDER):
-    os.makedirs(DATA_FOLDER)
-
-if not os.path.exists(LOG_FILE):
-    with open(LOG_FILE, mode="w", newline="") as f:
+# Create file if not exists
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
             "timestamp",
+            "event_type",
             "key_dwell",
             "mouse_x",
-            "mouse_y",
-            "scroll_dx",
-            "scroll_dy",
-            "idle_seconds",
-            "event_type"
+            "mouse_y"
         ])
 
-print("📝 Logger started...")
-print("Writing to:", LOG_FILE)
-
-# ===============================
-# GLOBAL STATE
-# ===============================
-
 key_press_times = {}
-last_activity_time = time.time()
 current_mouse_x = 0
 current_mouse_y = 0
 
 
-# ===============================
-# WRITE EVENT FUNCTION
-# ===============================
+# ==========================
+# WRITE FUNCTION
+# ==========================
+def write_event(event_type, key_dwell=0):
 
-def write_event(key_dwell=0, scroll_dx=0, scroll_dy=0, event_type=""):
+    timestamp = time.time()
 
-    global last_activity_time
-
-    timestamp = datetime.now()
-    idle_seconds = time.time() - last_activity_time
-    last_activity_time = time.time()
-
-    with open(LOG_FILE, mode="a", newline="") as f:
+    with open(DATA_FILE, "a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
             timestamp,
+            event_type,
             key_dwell,
             current_mouse_x,
-            current_mouse_y,
-            scroll_dx,
-            scroll_dy,
-            idle_seconds,
-            event_type
+            current_mouse_y
         ])
 
 
-# ===============================
+# ==========================
 # KEYBOARD EVENTS
-# ===============================
-
+# ==========================
 def on_press(key):
     key_press_times[key] = time.time()
 
@@ -84,33 +53,29 @@ def on_press(key):
 def on_release(key):
     if key in key_press_times:
         dwell = time.time() - key_press_times[key]
-        write_event(key_dwell=dwell, event_type="key")
+        write_event("key", dwell)
         del key_press_times[key]
 
 
-# ===============================
+# ==========================
 # MOUSE EVENTS
-# ===============================
-
+# ==========================
 def on_move(x, y):
     global current_mouse_x, current_mouse_y
     current_mouse_x = x
     current_mouse_y = y
-    write_event(event_type="move")
+    write_event("move")
 
 
 def on_click(x, y, button, pressed):
     if pressed:
-        write_event(event_type="click")
+        write_event("click")
 
 
-def on_scroll(x, y, dx, dy):
-    write_event(scroll_dx=dx, scroll_dy=dy, event_type="scroll")
-
-
-# ===============================
+# ==========================
 # START LISTENERS
-# ===============================
+# ==========================
+print("📡 Logger started...")
 
 keyboard_listener = keyboard.Listener(
     on_press=on_press,
@@ -119,19 +84,11 @@ keyboard_listener = keyboard.Listener(
 
 mouse_listener = mouse.Listener(
     on_move=on_move,
-    on_click=on_click,
-    on_scroll=on_scroll
+    on_click=on_click
 )
 
 keyboard_listener.start()
 mouse_listener.start()
 
-print("⌨️ Keyboard and 🖱 Mouse monitoring started.")
-print("Press CTRL+C to stop.\n")
-
-# Keep alive
-try:
-    while True:
-        time.sleep(1)
-except KeyboardInterrupt:
-    print("\n🛑 Logger stopped.")
+keyboard_listener.join()
+mouse_listener.join()
