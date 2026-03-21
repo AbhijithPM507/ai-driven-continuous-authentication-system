@@ -21,8 +21,8 @@ class Config:
     MODEL_RETRAIN_THRESHOLD = 0.3  # Retrain if accuracy drops below 70%
     
     # Behavioral Analysis Configuration
-    WINDOW_SIZE = 30  # seconds
-    MIN_CALIBRATION_TIME = 300  # 5 minutes minimum calibration
+    WINDOW_SIZE = 10  # seconds
+    MIN_CALIBRATION_TIME = 30  # 30 seconds minimum calibration
     KEYSTROKE_FEATURES = [
         'key_hold_time', 'flight_time', 'typing_speed', 
         'pause_variance', 'digraph_timing', 'trigraph_timing'
@@ -33,16 +33,16 @@ class Config:
     ]
     
     # ML Model Configuration
-    GRU_SEQUENCE_LENGTH = 50
+    GRU_SEQUENCE_LENGTH = 10
     GRU_HIDDEN_UNITS = 64
     AUTOENCODER_ENCODING_DIM = 32
     ANOMALY_THRESHOLD = 0.15
-    DRIFT_DETECTION_WINDOW = 100
+    DRIFT_DETECTION_WINDOW = 20
     
     # Authentication Thresholds
-    CONFIDENCE_THRESHOLD = 0.7
-    ANOMALY_SCORE_THRESHOLD = 0.8
-    CONSECUTIVE_ANOMALIES_LIMIT = 3
+    CONFIDENCE_THRESHOLD = 0.6
+    ANOMALY_SCORE_THRESHOLD = 0.36
+    CONSECUTIVE_ANOMALIES_LIMIT = 3  # adjusted for fast typing tolerance
     
     # WebSocket Configuration
     SOCKETIO_CORS_ALLOWED_ORIGINS = "*"
@@ -82,9 +82,6 @@ class ProductionConfig(Config):
     
     # Enhanced security for production
     BCRYPT_LOG_ROUNDS = 14
-    CONFIDENCE_THRESHOLD = 0.8
-    ANOMALY_SCORE_THRESHOLD = 0.75
-    CONSECUTIVE_ANOMALIES_LIMIT = 2
 
 class TestingConfig(Config):
     """Testing configuration"""

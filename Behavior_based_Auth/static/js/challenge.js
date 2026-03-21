@@ -1,5 +1,83 @@
 // js/challenge.js
 
+/**
+ * Show lockdown countdown overlay when intruder is detected
+ */
+function showLockdownCountdown() {
+    const overlay = document.createElement('div');
+    overlay.id = 'lockdown-overlay';
+    overlay.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(220, 38, 38, 0.95); z-index: 9999;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        color: white; font-family: monospace;
+    `;
+    overlay.innerHTML = `
+        <h1 style="font-size: 3rem; margin-bottom: 1rem;">
+            ⚠ INTRUDER DETECTED
+        </h1>
+        <p style="font-size: 1.2rem; margin-bottom: 2rem;">
+            Behavioural pattern does not match authorized user
+        </p>
+        <h2 id="countdown-num" style="font-size: 5rem; font-weight: bold;">10</h2>
+        <p style="font-size: 1rem; margin-top: 1rem; opacity: 0.8;">
+            Locking workstation... Press ESC to cancel if this is a false alarm
+        </p>
+    `;
+    document.body.appendChild(overlay);
+    
+    let count = 10;
+    const interval = setInterval(() => {
+        count--;
+        const el = document.getElementById('countdown-num');
+        if (el) el.textContent = count;
+        if (count <= 0) {
+            clearInterval(interval);
+            overlay.innerHTML = '<h1 style="font-size:3rem">🔒 Workstation Locked</h1>';
+        }
+    }, 1000);
+    
+    // ESC key cancels lockdown
+    document.addEventListener('keydown', function cancelLock(e) {
+        if (e.key === 'Escape') {
+            clearInterval(interval);
+            overlay.remove();
+            document.removeEventListener('keydown', cancelLock);
+            console.log('Lockdown cancelled by user');
+        }
+    });
+}
+
+// --- Global keyboard collection (reliable top-level listener) ---
+const keystrokeBuffer = [];
+let lastKeyUpTime = null;
+let typingTimeout;
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return;
+    keystrokeBuffer.push({
+        key: e.key,
+        press_time: Date.now(),
+        flight_time: lastKeyUpTime ? Date.now() - lastKeyUpTime : 0
+    });
+});
+
+document.addEventListener('keyup', function(e) {
+    if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return;
+    lastKeyUpTime = Date.now();
+    const last = keystrokeBuffer[keystrokeBuffer.length - 1];
+    if (last && !last.dwell_time) {
+        last.dwell_time = Date.now() - last.press_time;
+    }
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+        if (keystrokeBuffer.length >= 3) {
+            sendBehavioralDataForAuth();
+        }
+    }, 1000);
+});
+
 document.addEventListener('DOMContentLoaded', () => {
     const challengeInput = document.getElementById('challengeInput');
     const authStatusBox = document.getElementById('authStatusBox');
@@ -9,39 +87,48 @@ document.addEventListener('DOMContentLoaded', () => {
     const SLIDING_WINDOW_SIZE_MS = 30 * 1000; // 30 seconds
     const AUTHENTICATION_INTERVAL_MS = 5 * 1000; // Send data every 5 seconds for continuous auth
 
-    let keystrokeEvents = [];
     let mouseEvents = [];
-    let lastKeyDownTime = 0;
     let lastMouseMoveTime = 0;
     let authenticationInterval;
     let webSocket; // Simulated WebSocket
 
     // --- UI Update Function ---
     function updateAuthStatus(status, message) {
-        authStatusBox.classList.remove('auth', 'risk', 'high-risk', 'loading');
-        authStatusMessage.textContent = message;
+        const ids = ['auth-status', 'status-indicator', 'security-badge', 'risk-level'];
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.remove('authorized', 'anomaly', 'warning', 'safe', 'danger');
+            if (status === 'authorized') el.classList.add('authorized');
+            if (status === 'anomaly') el.classList.add('anomaly');
+        });
 
-        // Remove previous loading spinner if it exists
-        const spinner = authStatusBox.querySelector('svg');
-        if (spinner) spinner.remove();
+        const textEl = document.getElementById('auth-status-text');
+        if (textEl) textEl.textContent = status;
 
-        switch (status) {
-            case 'authenticated':
-                authStatusBox.classList.add('auth');
-                break;
-            case 'risk':
-                authStatusBox.classList.add('risk');
-                break;
-            case 'high-risk':
-                authStatusBox.classList.add('high-risk');
-                // Optionally add a spinner for high-risk if a backend check is initiated
-                // addSpinner(authStatusBox);
-                break;
-            case 'loading':
-            default:
-                authStatusBox.classList.add('loading');
-                addSpinner(authStatusBox);
-                break;
+        if (authStatusBox) {
+            authStatusBox.classList.remove('auth', 'risk', 'high-risk', 'loading');
+            if (message && authStatusMessage) authStatusMessage.textContent = message;
+            const spinner = authStatusBox.querySelector('svg');
+            if (spinner) spinner.remove();
+
+            switch (status) {
+                case 'authorized':
+                    authStatusBox.classList.add('auth');
+                    break;
+                case 'anomaly':
+                case 'risk':
+                    authStatusBox.classList.add('risk');
+                    break;
+                case 'high-risk':
+                    authStatusBox.classList.add('high-risk');
+                    break;
+                case 'loading':
+                default:
+                    authStatusBox.classList.add('loading');
+                    addSpinner(authStatusBox);
+                    break;
+            }
         }
     }
 
@@ -58,30 +145,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Data Collection ---
-
-    // Keystroke event listeners
-    challengeInput.addEventListener('keydown', (e) => {
-        if (!e.repeat) {
-            const currentTime = performance.now();
-            keystrokeEvents.push({
-                type: 'keydown',
-                key: e.key,
-                keyCode: e.keyCode,
-                timestamp: currentTime
-            });
-            lastKeyDownTime = currentTime;
-        }
-    });
-
-    challengeInput.addEventListener('keyup', (e) => {
-        const currentTime = performance.now();
-        keystrokeEvents.push({
-            type: 'keyup',
-            key: e.key,
-            keyCode: e.keyCode,
-            timestamp: currentTime
-        });
-    });
 
     // Mouse event listeners (on the whole document for broader capture)
     document.addEventListener('mousemove', (e) => {
@@ -120,31 +183,32 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Sliding Window & WebSocket Simulation ---
 
     function sendBehavioralDataForAuth() {
-        const currentTime = performance.now();
-        const windowStartTime = currentTime - SLIDING_WINDOW_SIZE_MS;
+        try {
+            const currentTime = performance.now();
+            const windowStartTime = currentTime - SLIDING_WINDOW_SIZE_MS;
 
-        // Filter events within the current sliding window
-        const windowKeystrokeEvents = keystrokeEvents.filter(event => event.timestamp >= windowStartTime);
-        const windowMouseEvents = mouseEvents.filter(event => event.timestamp >= windowStartTime);
+            // Transfer full keystroke buffer into payload
+            const keystrokeData = [...keystrokeBuffer];
+            keystrokeBuffer.length = 0;
 
-        // Remove old events
-        keystrokeEvents = windowKeystrokeEvents;
-        mouseEvents = windowMouseEvents;
+            // Filter mouse events within the current sliding window
+            const windowMouseEvents = mouseEvents.filter(event => event.timestamp >= windowStartTime);
+            mouseEvents = windowMouseEvents;
 
-        // Only send data if there's significant activity
-        if (windowKeystrokeEvents.length > 5 || windowMouseEvents.length > 10) {
-            const dataToSend = {
-                keystroke_data: windowKeystrokeEvents,
-                mouse_data: windowMouseEvents,
-                timestamp: Date.now()
-            };
+            if (keystrokeData.length >= 5 || windowMouseEvents.length > 10) {
+                const dataToSend = {
+                    keystroke_data: keystrokeData,
+                    mouse_data: windowMouseEvents,
+                    timestamp: Date.now()
+                };
 
-            // Simulate sending data via WebSocket
-            console.log('Sending behavioral data for authentication:', dataToSend);
-            updateAuthStatus('loading', 'Authenticating your behavior...');
-
-        } else {
-            updateAuthStatus('authenticated', 'No activity, session secure.'); // Default if no activity
+                console.log('Sending behavioral data for authentication:', dataToSend);
+                updateAuthStatus('loading', 'Authenticating your behavior...');
+            } else {
+                updateAuthStatus('authenticated', 'No activity, session secure.');
+            }
+        } catch (err) {
+            console.warn('Auth send error:', err.message);
         }
     }
 
@@ -161,19 +225,20 @@ document.addEventListener('DOMContentLoaded', () => {
         // webSocket.onerror = (error) => console.error('WebSocket error:', error);
         // webSocket.onclose = () => console.log('WebSocket closed');
 
-        // Start sending data for authentication checks
-        authenticationInterval = setInterval(sendBehavioralDataForAuth, AUTHENTICATION_INTERVAL_MS);
-
-        logoutBtn.addEventListener('click', () => {
-            clearInterval(authenticationInterval);
-            // if (webSocket) webSocket.close();
-            console.log('Logged out.');
-            window.location.href = 'login.html'; // Redirect to login page on logout
-        });
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                clearInterval(authenticationInterval);
+                // if (webSocket) webSocket.close();
+                console.log('Logged out.');
+                window.location.href = 'login.html'; // Redirect to login page on logout
+            });
+        }
 
         // Initial status display
         updateAuthStatus('loading', 'Authenticating your behavior...');
-        challengeInput.focus();
+        if (challengeInput) {
+            challengeInput.focus();
+        }
     }
 
     initChallenge();
@@ -296,49 +361,75 @@ class DashboardManager {
 
     setupEventListeners() {
         // Navigation
-        this.navLinks.forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                const section = link.dataset.section;
-                this.showSection(section);
+        if (this.navLinks && this.navLinks.length > 0) {
+            this.navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const section = link.dataset.section;
+                    this.showSection(section);
+                });
             });
-        });
+        }
         
         // Sidebar toggle
-        this.sidebarToggle.addEventListener('click', () => {
-            this.sidebar.classList.toggle('open');
-        });
+        if (this.sidebarToggle && this.sidebar) {
+            this.sidebarToggle.addEventListener('click', () => {
+                this.sidebar.classList.toggle('open');
+            });
+        }
         
         // Notifications
-        this.notificationBtn.addEventListener('click', () => {
-            this.toggleNotificationDropdown();
-        });
+        if (this.notificationBtn) {
+            this.notificationBtn.addEventListener('click', () => {
+                this.toggleNotificationDropdown();
+            });
+        }
         
-        this.markAllRead.addEventListener('click', () => {
-            this.markAllNotificationsRead();
-        });
+        if (this.markAllRead) {
+            this.markAllRead.addEventListener('click', () => {
+                this.markAllNotificationsRead();
+            });
+        }
         
         // Quick actions
-        this.runSecurityCheck.addEventListener('click', () => this.runSecurityCheck());
-        this.updateModels.addEventListener('click', () => this.updateModels());
-        this.exportLogs.addEventListener('click', () => this.exportLogs());
-        this.testBehavior.addEventListener('click', () => this.toggleTestArea());
+        if (this.runSecurityCheck) {
+            this.runSecurityCheck.addEventListener('click', () => this.runSecurityCheck());
+        }
+        if (this.updateModels) {
+            this.updateModels.addEventListener('click', () => this.updateModels());
+        }
+        if (this.exportLogs) {
+            this.exportLogs.addEventListener('click', () => this.exportLogs());
+        }
+        if (this.testBehavior) {
+            this.testBehavior.addEventListener('click', () => this.toggleTestArea());
+        }
         
         // Activity log
-        this.refreshActivity.addEventListener('click', () => this.loadActivityLog());
-        this.activityFilter.addEventListener('change', () => this.loadActivityLog());
-        this.dateFilter.addEventListener('change', () => this.loadActivityLog());
+        if (this.refreshActivity) {
+            this.refreshActivity.addEventListener('click', () => this.loadActivityLog());
+        }
+        if (this.activityFilter) {
+            this.activityFilter.addEventListener('change', () => this.loadActivityLog());
+        }
+        if (this.dateFilter) {
+            this.dateFilter.addEventListener('change', () => this.loadActivityLog());
+        }
         
         // Settings
-        this.authThreshold.addEventListener('input', (e) => {
-            e.target.nextElementSibling.textContent = e.target.value;
-            this.updateSettings();
-        });
+        if (this.authThreshold) {
+            this.authThreshold.addEventListener('input', (e) => {
+                e.target.nextElementSibling.textContent = e.target.value;
+                this.updateSettings();
+            });
+        }
         
-        this.anomalySensitivity.addEventListener('input', (e) => {
-            e.target.nextElementSibling.textContent = e.target.value;
-            this.updateSettings();
-        });
+        if (this.anomalySensitivity) {
+            this.anomalySensitivity.addEventListener('input', (e) => {
+                e.target.nextElementSibling.textContent = e.target.value;
+                this.updateSettings();
+            });
+        }
         
         // Real-time monitoring events
         document.addEventListener('keydown', (e) => this.captureKeystroke(e));
@@ -349,15 +440,26 @@ class DashboardManager {
         document.addEventListener('click', (e) => this.captureMouseClick(e));
         
         // Test area
-        this.startTest.addEventListener('click', () => this.startBehaviorTest());
-        this.stopTest.addEventListener('click', () => this.stopBehaviorTest());
+        if (this.startTest) {
+            this.startTest.addEventListener('click', () => this.startBehaviorTest());
+        }
+        if (this.stopTest) {
+            this.stopTest.addEventListener('click', () => this.stopBehaviorTest());
+        }
         
         // Alert modal
-        this.acknowledgeAlert.addEventListener('click', () => this.acknowledgeSecurityAlert());
-        this.investigateAlert.addEventListener('click', () => this.investigateSecurityAlert());
+        if (this.acknowledgeAlert) {
+            this.acknowledgeAlert.addEventListener('click', () => this.acknowledgeSecurityAlert());
+        }
+        if (this.investigateAlert) {
+            this.investigateAlert.addEventListener('click', () => this.investigateSecurityAlert());
+        }
         
         // Logout
-        document.getElementById('logoutBtn').addEventListener('click', () => this.logout());
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => this.logout());
+        }
         
         // Close dropdowns when clicking outside
         document.addEventListener('click', (e) => {
@@ -392,7 +494,12 @@ class DashboardManager {
     }
 
     connectWebSocket() {
-        this.socket = io();
+        this.socket = io({
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            timeout: 60000
+        });
         
         this.socket.on('connect', () => {
             console.log('Connected to dashboard server');
@@ -614,7 +721,7 @@ class DashboardManager {
         
         // Update authentication stats periodically
         this.authUpdateInterval = setInterval(() => {
-            this.updateAuthenticationStats();
+            this.updateAuthenticationDisplay();
         }, 5000);
         
         // Update charts periodically
@@ -745,9 +852,14 @@ class DashboardManager {
 
     handleSecurityAlert(data) {
         this.addSecurityAlert(data);
-        this.updateNotificationBadge();
         
-        if (data.level >= 2) {
+        // Show lockdown countdown for critical alerts
+        if (data.level === 'critical') {
+            showLockdownCountdown();
+            this.updateNotificationBadge();
+        }
+        
+        if (data.level === 'warning' || data.level === 'critical') {
             this.showSecurityAlertModal(data);
         }
         
@@ -755,7 +867,7 @@ class DashboardManager {
         this.addActivityItem({
             type: 'anomaly',
             message: data.message,
-            risk: this.getAlertLevelText(data.level),
+            risk: this.getAlertLevelText(data.level === 'critical' ? 3 : 2),
             timestamp: new Date().toISOString()
         });
     }
@@ -1428,4 +1540,26 @@ document.addEventListener('DOMContentLoaded', () => {
             statusDot.className = 'status-dot red';
         }
     });
+});
+
+window.addEventListener('load', function() {
+    var typingTimeout;
+    document.addEventListener('keyup', function() {
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(function() {
+            if (typeof sendBehavioralDataForAuth === 'function') {
+                if (keystrokeBuffer && keystrokeBuffer.length >= 3) {
+                    sendBehavioralDataForAuth();
+                }
+            }
+        }, 1500);
+    });
+    
+    setTimeout(function() {
+        if (typeof sendBehavioralDataForAuth === 'function') {
+            setInterval(sendBehavioralDataForAuth, 5000);
+        } else {
+            console.error('sendBehavioralDataForAuth not found');
+        }
+    }, 2000);
 });

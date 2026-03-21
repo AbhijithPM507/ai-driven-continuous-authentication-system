@@ -108,6 +108,7 @@ class CalibrationManager {
         
         // Buttons
         this.startCalibration = document.getElementById('startCalibration');
+        this.nextPassageBtn = document.getElementById('nextPassage');
         this.skipPassage = document.getElementById('skipPassage');
         this.nextToMouse = document.getElementById('nextToMouse');
         this.startMouseExercise = document.getElementById('startMouseExercise');
@@ -135,7 +136,8 @@ class CalibrationManager {
     setupEventListeners() {
         // Button events
         this.startCalibration.addEventListener('click', () => this.startTypingCalibration());
-        this.skipPassage.addEventListener('click', () => this.nextPassage());
+        this.nextPassageBtn.addEventListener('click', () => this.nextPassage());
+        this.skipPassage.addEventListener('click', () => this.skipPassageAction());
         this.nextToMouse.addEventListener('click', () => this.startMouseCalibration());
         this.startMouseExercise.addEventListener('click', () => this.startCurrentMouseExercise());
         this.nextMouseExerciseBtn.addEventListener('click', () => this.nextMouseExercise());
@@ -250,6 +252,17 @@ class CalibrationManager {
         this.typingStats.wpm = wpm;
         this.typingStats.accuracy = Math.round(accuracy);
         this.updateTypingStats();
+        
+        // Show "Next Passage" button after typing 20+ characters
+        if (typed.length >= 20 && this.currentPassage < this.typingPassages.length - 1) {
+            this.nextPassageBtn.disabled = false;
+            this.nextPassageBtn.style.display = 'block';
+        }
+        
+        // Enable "Continue to Mouse Exercises" button after typing 20+ characters
+        if (typed.length >= 20) {
+            this.nextToMouse.disabled = false;
+        }
         
         // Check if passage is complete
         if (typed.length >= original.length * 0.95) { // 95% completion
@@ -367,12 +380,13 @@ class CalibrationManager {
 
     onPassageComplete() {
         this.skipPassage.disabled = false;
-        this.nextToMouse.disabled = this.currentPassage < this.typingPassages.length - 1;
+        // Enable mouse exercises button after ANY passage is completed
+        this.nextToMouse.disabled = false;
         
         this.typingFeedback.innerHTML = `
             <span class="feedback-text" style="color: var(--secondary-color);">
                 <i class="fas fa-check-circle"></i> Passage completed! 
-                ${this.currentPassage < this.typingPassages.length - 1 ? 'Continue to next passage.' : 'All passages completed!'}
+                ${this.currentPassage < this.typingPassages.length - 1 ? 'Continue to next passage or move to mouse exercises.' : 'All passages completed!'}
             </span>
         `;
     }
@@ -381,8 +395,14 @@ class CalibrationManager {
         if (this.currentPassage < this.typingPassages.length - 1) {
             this.currentPassage++;
             this.loadCurrentPassage();
+            this.nextPassageBtn.disabled = true;
+            this.nextPassageBtn.style.display = 'none';
             this.skipPassage.disabled = true;
         }
+    }
+    
+    skipPassageAction() {
+        this.nextPassage();
     }
 
     startMouseCalibration() {

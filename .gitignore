@@ -1,0 +1,48 @@
+# Database
+database/auth_system.db
+database/*.db
+
+# Trained models (too large for git)
+models/saved/
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment variables (contains secrets)
+.env
+.env.local
+
+# Security logs and evidence
+security_log.txt
+intruder_*.png
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Logs
+*.log
+behavioral_auth.log
+
+# Test files
+test_training.py
+import_calibration.py
+
+# Temporary files
+*.tmp
+*.bak
+*.orig

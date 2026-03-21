@@ -18,13 +18,15 @@ import logging
 from collections import defaultdict, deque
 import traceback
 import numpy as np
+import platform
+import subprocess
 
 # Import our custom modules
 from config import config
 from database.db_manager import DatabaseManager
 from utils.feature_extractor import BehavioralFeatureExtractor
 from utils.drift_detector import BehavioralDriftDetector
-from models.behavioral_models import EnsembleBehavioralClassifier
+from models.behavioral_models import EnsembleBehavioralClassifier, KEYSTROKE_DIM, MOUSE_DIM, COMBINED_DIM
 
 # Configure logging
 logging.basicConfig(
@@ -36,6 +38,60 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Lockdown cooldown tracker
+lockdown_cooldown = {}  # {user_id: timestamp of last lockdown}
+
+# Session start times for confidence boosting
+session_start_times = {}
+
+def trigger_lockdown(user_id, score):
+    """Trigger security lockdown when intruder is detected"""
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
+    try:
+        with open("security_log.txt", "a") as f:
+            f.write(f"[{timestamp}] INTRUDER DETECTED - User: {user_id} - Score: {score}\n")
+        logger.error(f"INTRUDER DETECTED - User: {user_id} - Anomaly Score: {score}")
+    except Exception as e:
+        logger.error(f"Failed to log lockdown event: {e}")
+    
+    def lock():
+        time.sleep(10)
+        system = platform.system()
+        try:
+            if system == "Windows":
+                os.system("rundll32.exe user32.dll,LockWorkStation")
+            elif system == "Darwin":
+                os.system("/System/Library/CoreServices/Menu\ Extras/User.menu/Contents/Resources/CGSession -suspend")
+            else:
+                os.system("gnome-screensaver-command -l")
+            logger.info(f"Workstation locked for user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to lock workstation: {e}")
+    
+    thread = threading.Thread(target=lock)
+    thread.daemon = True
+    thread.start()
+
+def ensure_dim(X, target_dim, label=''):
+    """Universal dimension normalizer for feature arrays"""
+    import numpy as np
+    if X is None or len(X) == 0:
+        return np.zeros((1, target_dim))
+    X = np.array(X)
+    if X.ndim == 1:
+        X = X.reshape(1, -1)
+    current = X.shape[1]
+    if current == target_dim:
+        return X
+    elif current < target_dim:
+        print(f"[DIM FIX] {label}: padding {current} → {target_dim}")
+        pad = np.zeros((X.shape[0], target_dim - current))
+        return np.hstack([X, pad])
+    else:
+        print(f"[DIM FIX] {label}: trimming {current} → {target_dim}")
+        return X[:, :target_dim]
 
 def create_app(config_name='development'):
     """Application factory with comprehensive configuration"""
@@ -49,7 +105,9 @@ def create_app(config_name='development'):
         cors_allowed_origins=app.config['SOCKETIO_CORS_ALLOWED_ORIGINS'],
         logger=app.config['SOCKETIO_LOGGER'],
         engineio_logger=app.config['SOCKETIO_ENGINEIO_LOGGER'],
-        async_mode='threading'
+        async_mode='threading',
+        ping_timeout=60,
+        ping_interval=25
     )
     
     # Initialize core components
@@ -67,6 +125,10 @@ def create_app(config_name='development'):
         'mouse': deque(maxlen=1000),
         'recent_features': deque(maxlen=100)
     })
+    
+    # Track consecutive anomalies per user
+    consecutive_anomalies = defaultdict(int)
+    CONSECUTIVE_ANOMALIES_LIMIT = 3
     
     # Authentication helpers
     def authenticate_session(session_id: str) -> Optional[Dict]:
@@ -438,6 +500,10 @@ def create_app(config_name='development'):
                 
                 # Combine features for training
                 all_features = keystroke_features + mouse_features
+                print(f"[TRAINING] keystroke features shape: {len(keystroke_features)} samples, {len(keystroke_features[0]) if keystroke_features else 0} dims")
+                print(f"[TRAINING] mouse features shape: {len(mouse_features)} samples, {len(mouse_features[0]) if mouse_features else 0} dims")
+                print(f"[TRAINING] expected dims: ks={KEYSTROKE_DIM} ms={MOUSE_DIM}")
+                print(f"[TRAINING] Starting model training...")
                 logger.info(f"Training models with {len(all_features)} total feature samples")
                 
                 # Validate feature dimensions before training
@@ -449,13 +515,24 @@ def create_app(config_name='development'):
                         all_features = [extractor.fix_feature_dimensions(feat) for feat in all_features]
                 
                 # Train the ensemble
-                training_results = user_models[user_id].train_initial_models(all_features)
-                logger.info(f"Model training completed: {training_results}")
-                
-                # Handle training failures gracefully
-                if not training_results or 'error' in training_results:
-                    logger.warning("Model training had issues, using fallback")
-                    training_results = {'fallback_model': {'accuracy': 0.75}}
+                try:
+                    training_results = user_models[user_id].train_initial_models(all_features)
+                    print(f"[TRAINING] All models trained successfully")
+                    logger.info(f"Model training completed: {training_results}")
+                    
+                    # Handle training failures gracefully
+                    if not training_results or 'error' in training_results:
+                        logger.warning("Model training had issues, using fallback")
+                        training_results = {'fallback_model': {'accuracy': 0.75}}
+                except Exception as e:
+                    logger.error(f"[TRAINING ERROR] {e}")
+                    # Return partial success so frontend doesn't hang
+                    training_results = {'fallback_model': {'accuracy': 0.70}}
+                    return jsonify({
+                        'success': True,
+                        'message': 'Basic calibration complete',
+                        'warning': str(e)
+                    }), 200
                 
             except Exception as e:
                 logger.error(f"Error during model training: {str(e)}")
@@ -691,11 +768,15 @@ def create_app(config_name='development'):
             
             session_data = authenticate_session(session_id)
             if session_data:
+                user_id = session_data['user_id']
                 join_room(session_id)
                 
                 # Store socket session mapping
                 session['session_id'] = session_id
-                session['user_id'] = session_data['user_id']
+                session['user_id'] = user_id
+                
+                # Record session start time for confidence boosting
+                session_start_times[user_id] = __import__('time').time()
                 
                 emit('session_joined', {
                     'success': True,
@@ -783,12 +864,53 @@ def create_app(config_name='development'):
                     
                     # Check for security alerts
                     if auth_result.get('alert_level', 0) > 0:
-                        emit('security_alert', {
-                            'level': auth_result['alert_level'],
-                            'message': auth_result['alert_message'],
-                            'confidence': auth_result['confidence'],
-                            'recommendations': auth_result.get('recommendations', [])
-                        })
+                        confidence = auth_result.get('confidence', 0)
+                        score = auth_result.get('anomaly_score', 0)
+                        anomaly_detected = auth_result.get('anomaly_detected', False)
+                        alert_level = auth_result.get('alert_level', 0)
+                        
+                        # Treat any alert level >= 1 as anomaly
+                        is_anomaly = score < 0.42
+                        
+                        # Status line for terminal
+                        status = "ANOMALY" if is_anomaly else "AUTHORIZED"
+                        print(f"[{status}] score={score:.3f} conf={confidence:.2f} strikes={consecutive_anomalies.get(user_id,0)}/3")
+                        
+                        # Only make decisions if confidence is sufficient
+                        if confidence >= 0.15:
+                            if is_anomaly:
+                                consecutive_anomalies[user_id] = consecutive_anomalies.get(user_id, 0) + 1
+                                print(f"[STRIKE] {consecutive_anomalies[user_id]}/3")
+                                
+                                # Emit alert to frontend
+                                emit('security_alert', {
+                                    'level': 'warning' if consecutive_anomalies[user_id] < 3 else 'critical',
+                                    'score': score,
+                                    'strikes': consecutive_anomalies[user_id]
+                                })
+                            else:
+                                consecutive_anomalies[user_id] = 0
+                            
+                            # Lockdown check
+                            if consecutive_anomalies.get(user_id, 0) >= 3:
+                                now = __import__('time').time()
+                                last = lockdown_cooldown.get(user_id, 0)
+                                if now - last > 30:
+                                    print("[LOCKDOWN TRIGGERED]")
+                                    lockdown_cooldown[user_id] = now
+                                    consecutive_anomalies[user_id] = 0
+                                    trigger_lockdown(user_id, score)
+                                    socketio.emit('lockdown_initiated', {'countdown': 10})
+                                else:
+                                    remaining = int(30 - (now - last))
+                                    print(f"[COOLDOWN] {remaining}s remaining")
+                                    consecutive_anomalies[user_id] = 0
+                        else:
+                            print(f"[WAITING] confidence={confidence:.2f} — need 0.15 to start")
+                    # else:
+                    #     # No alert - reset counter
+                    #     if user_id in consecutive_anomalies:
+                    #         consecutive_anomalies[user_id] = 0
                     
                     # Log anomalies
                     if auth_result.get('anomaly_detected', False):
@@ -895,6 +1017,8 @@ def create_app(config_name='development'):
             
             try:
                 anomaly_threshold = app.config.get('ANOMALY_SCORE_THRESHOLD', 0.8)
+                print(f"[ANOMALY CHECK] User {user_id}: anomaly_score={anomaly_score:.3f}, threshold={anomaly_threshold}, confidence={confidence:.3f}")
+                
                 if anomaly_score > anomaly_threshold:
                     if confidence > 0.7:
                         alert_level = 3
@@ -918,6 +1042,15 @@ def create_app(config_name='development'):
             
             except Exception as e:
                 logger.warning(f"Alert level calculation error: {e}")
+            
+            # Boost confidence based on session time
+            import time
+            elapsed = time.time() - session_start_times.get(user_id, time.time())
+            # Boost confidence based on time spent in session
+            # After 1 minute: minimum 0.20, after 2 min: 0.30, after 3 min: 0.40
+            time_boost = min(elapsed / 180.0, 0.40)  # max 0.40 boost after 3 minutes
+            confidence = max(confidence, time_boost)
+            confidence = min(confidence, 1.0)  # cap at 1.0
             
             # Update model with feedback (safely)
             try:

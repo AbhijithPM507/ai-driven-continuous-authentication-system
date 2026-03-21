@@ -17,10 +17,38 @@ from collections import deque
 import warnings
 warnings.filterwarnings('ignore')
 
+# Measure actual feature dimensions from extractor
+from utils.feature_extractor import BehavioralFeatureExtractor
+_extractor = BehavioralFeatureExtractor()
+
+# Measure actual feature dimensions
+_dummy_keystrokes = [
+    {'dwell_time': 80, 'flight_time': 150, 
+     'key': 'a', 'timestamp': i} 
+    for i in range(20)
+]
+_dummy_mouse = [
+    {'x': i*10, 'y': i*5, 'timestamp': i, 
+     'event_type': 'move', 'speed': 100}
+    for i in range(20)
+]
+try:
+    _ks_features = _extractor.extract_keystroke_features(_dummy_keystrokes)
+    _ms_features = _extractor.extract_mouse_features(_dummy_mouse)
+    KEYSTROKE_DIM = len(_ks_features) if isinstance(_ks_features, dict) else _ks_features.shape[-1]
+    MOUSE_DIM = len(_ms_features) if isinstance(_ms_features, dict) else _ms_features.shape[-1]
+    COMBINED_DIM = KEYSTROKE_DIM + MOUSE_DIM
+    print(f"[DIMENSIONS] keystroke={KEYSTROKE_DIM} mouse={MOUSE_DIM} combined={COMBINED_DIM}")
+except Exception as e:
+    print(f"[DIMENSIONS] Could not measure: {e}")
+    KEYSTROKE_DIM = 18
+    MOUSE_DIM = 20
+    COMBINED_DIM = 38
+
 class GRUSequenceModel:
     """GRU model for sequential behavioral data analysis"""
     
-    def __init__(self, sequence_length: int = 50, feature_dim: int = 20, 
+    def __init__(self, sequence_length: int = 50, feature_dim: int = COMBINED_DIM, 
                  hidden_units: int = 64):
         self.sequence_length = sequence_length
         self.feature_dim = feature_dim
@@ -188,7 +216,7 @@ class GRUSequenceModel:
 class AutoencoderAnomalyDetector:
     """Autoencoder for detecting behavioral anomalies"""
     
-    def __init__(self, feature_dim: int = 20, encoding_dim: int = 8):
+    def __init__(self, feature_dim: int = COMBINED_DIM, encoding_dim: int = 8):
         self.feature_dim = feature_dim
         self.encoding_dim = encoding_dim
         self.model = None
@@ -836,15 +864,15 @@ class EnsembleBehavioralClassifier:
         
         try:
             # Train GRU
-            if len(genuine_features) >= 50:  # Need enough data for sequences
+            if len(genuine_features) >= 30:  # Need enough data for sequences
                 results['gru'] = self.gru_model.train(genuine_features)
             
             # Train Autoencoder
-            if len(genuine_features) >= 20:
+            if len(genuine_features) >= 30:
                 results['autoencoder'] = self.autoencoder.train(genuine_features)
             
             # Train One-Class SVM
-            if len(genuine_features) >= 10:
+            if len(genuine_features) >= 30:
                 results['svm'] = self.svm_detector.train(genuine_features)
             
             # Initialize k-NN with genuine data
@@ -852,11 +880,11 @@ class EnsembleBehavioralClassifier:
                 self.knn_classifier.update(features, is_genuine=True)
             
             # Train Isolation Forest
-            if len(genuine_features) >= 20:
+            if len(genuine_features) >= 30:
                 results['isolation'] = self.isolation_forest.train(genuine_features)
             
             # Initialize Passive-Aggressive with genuine data
-            if len(genuine_features) >= 5:
+            if len(genuine_features) >= 30:
                 labels = [1] * len(genuine_features)
                 self.pa_classifier.partial_fit(genuine_features, labels)
                 results['pa'] = {'initialized': True}

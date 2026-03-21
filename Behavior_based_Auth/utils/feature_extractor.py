@@ -14,6 +14,10 @@ class BehavioralFeatureExtractor:
     Extracts 38 total features: 18 keystroke + 20 mouse features.
     """
     
+    # keystroke features: 18
+    # mouse features: 20
+    # combined total: 38
+    
     def __init__(self, window_size: int = 30):
         self.window_size = window_size
         self.keystroke_buffer = deque(maxlen=1000)
