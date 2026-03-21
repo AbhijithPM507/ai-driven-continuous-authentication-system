@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Dashboard - SecureAuth</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="challenge-page">
+    <div class="challenge-container">
+        <!-- Background Animation -->
+        <div class="background-animation">
+            <div class="floating-elements">
+                <div class="element element-1"></div>
+                <div class="element element-2"></div>
+                <div class="element element-3"></div>
+                <div class="element element-4"></div>
+                <div class="element element-5"></div>
+            </div>
+        </div>
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fas fa-shield-alt"></i>
+                    <span>SecureAuth</span>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <ul>
+                    <li class="nav-item active">
+                        <a href="#dashboard" class="nav-link" data-section="dashboard">
+                            <i class="fas fa-tachometer-alt"></i>
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#security" class="nav-link" data-section="security">
+                            <i class="fas fa-shield-virus"></i>
+                            <span>Security Status</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#analytics" class="nav-link" data-section="analytics">
+                            <i class="fas fa-chart-line"></i>
+                            <span>Behavioral Analytics</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#activity" class="nav-link" data-section="activity">
+                            <i class="fas fa-history"></i>
+                            <span>Activity Log</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#settings" class="nav-link" data-section="settings">
+                            <i class="fas fa-cog"></i>
+                            <span>Settings</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="user-info">
+                        <span class="username" id="sidebarUsername">Loading...</span>
+                        <span class="user-status online">Online</span>
+                    </div>
+                </div>
+                <button class="logout-btn" id="logoutBtn">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="main-header">
+                <div class="header-left">
+                    <button class="sidebar-toggle" id="sidebarToggle">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h1 class="page-title" id="pageTitle">Dashboard</h1>
+                </div>
+
+                <div class="header-right">
+                    <!-- Real-time Auth Status -->
+                    <div class="auth-status" id="authStatus">
+                        <div class="status-indicator" id="statusIndicator">
+                            <div class="status-dot"></div>
+                        </div>
+                        <span class="status-text" id="statusText">Monitoring...</span>
+                    </div>
+
+                    <!-- Notifications -->
+                    <div class="notifications" id="notifications">
+                        <button class="notification-btn" id="notificationBtn">
+                            <i class="fas fa-bell"></i>
+                            <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
+                        </button>
+                        <div class="notification-dropdown" id="notificationDropdown" style="display: none;">
+                            <div class="notification-header">
+                                <h4>Security Alerts</h4>
+                                <button class="mark-all-read" id="markAllRead">Mark all read</button>
+                            </div>
+                            <div class="notification-list" id="notificationList">
+                                <div class="no-notifications">
+                                    <i class="fas fa-check-circle"></i>
+                                    <p>No alerts - all systems secure</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content Sections -->
+            <div class="content-wrapper">
+                <!-- Dashboard Section -->
+                <section class="content-section active" id="dashboardSection">
+                    <div class="dashboard-grid">
+                        <!-- Security Overview -->
+                        <div class="dashboard-card security-overview">
+                            <div class="card-header">
+                                <h3>Security Overview</h3>
+                                <div class="card-actions">
+                                    <button class="action-btn" id="refreshSecurity">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-content">
+                                <div class="security-score">
+                                    <div class="score-circle" id="securityScoreCircle">
+                                        <span class="score-value" id="securityScore">--</span>
+                                        <span class="score-label">Security Score</span>
+                                    </div>
+                                </div>
+                                <div class="security-metrics">
+                                    <div class="metric">
+                                        <span class="metric-label">Authentication Score</span>
+                                        <span class="metric-value" id="authScore">0.0</span>
+                                    </div>
+                                    <div class="metric">
+                                        <span class="metric-label">Confidence Level</span>
+                                        <span class="metric-value" id="confidenceLevel">0%</span>
+                                    </div>
+                                    <div class="metric">
+                                        <span class="metric-label">Anomaly Risk</span>
+                                        <span class="metric-value" id="anomalyRisk">Low</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Real-time Monitoring -->
+                        <div class="dashboard-card real-time-monitor">
+                            <div class="card-header">
+                                <h3>Real-time Monitoring</h3>
+                                <div class="monitor-status" id="monitorStatus">
+                                    <div class="status-dot active"></div>
+                                    <span>Active</span>
+                                </div>
+                            </div>
+                            <div class="card-content">
+                                <div class="monitor-visualization">
+                                    <canvas id="behaviorChart" width="300" height="150"></canvas>
+                                </div>
+                                <div class="monitor-stats">
+                                    <div class="stat">
+                                        <i class="fas fa-keyboard"></i>
+                                        <span class="stat-label">Keystroke Samples</span>
+                                        <span class="stat-value" id="keystrokeSamples">0</span>
+                                    </div>
+                                    <div class="stat">
+                                        <i class="fas fa-mouse-pointer"></i>
+                                        <span class="stat-label">Mouse Samples</span>
+                                        <span class="stat-value" id="mouseSamples">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Recent Activity -->
+                        <div class="dashboard-card recent-activity">
+                            <div class="card-header">
+                                <h3>Recent Activity</h3>
+                                <a href="#activity" class="view-all">View All</a>
+                            </div>
+                            <div class="card-content">
+                                <div class="activity-list" id="recentActivityList">
+                                    <div class="activity-item">
+                                        <div class="activity-icon success">
+                                            <i class="fas fa-check"></i>
+                                        </div>
+                                        <div class="activity-details">
+                                            <span class="activity-text">Session authenticated successfully</span>
+                                            <span class="activity-time">Just now</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Quick Actions -->
+                        <div class="dashboard-card quick-actions">
+                            <div class="card-header">
+                                <h3>Quick Actions</h3>
+                            </div>
+                            <div class="card-content">
+                                <div class="action-buttons">
+                                    <button class="action-button" id="runSecurityCheck">
+                                        <i class="fas fa-search"></i>
+                                        <span>Security Check</span>
+                                    </button>
+                                    <button class="action-button" id="updateModels">
+                                        <i class="fas fa-brain"></i>
+                                        <span>Update Models</span>
+                                    </button>
+                                    <button class="action-button" id="exportLogs">
+                                        <i class="fas fa-download"></i>
+                                        <span>Export Logs</span>
+                                    </button>
+                                    <button class="action-button" id="testBehavior">
+                                        <i class="fas fa-vial"></i>
+                                        <span>Test Behavior</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Security Section -->
+                <section class="content-section" id="securitySection">
+                    <div class="security-grid">
+                        <div class="security-card threat-detection">
+                            <h3>Threat Detection</h3>
+                            <div class="threat-level" id="threatLevel">
+                                <div class="threat-indicator low">
+                                    <span class="threat-value">LOW</span>
+                                </div>
+                                <p>No threats detected in the last 24 hours</p>
+                            </div>
+                        </div>
+
+                        <div class="security-card drift-analysis">
+                            <h3>Behavioral Drift Analysis</h3>
+                            <div class="drift-status" id="driftStatus">
+                                <canvas id="driftChart" width="400" height="200"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="security-card model-performance">
+                            <h3>Model Performance</h3>
+                            <div class="performance-metrics" id="performanceMetrics">
+                                <!-- Performance data will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Analytics Section -->
+                <section class="content-section" id="analyticsSection">
+                    <div class="analytics-grid">
+                        <div class="analytics-card behavior-patterns">
+                            <h3>Behavioral Patterns</h3>
+                            <canvas id="patternsChart" width="600" height="300"></canvas>
+                        </div>
+
+                        <div class="analytics-card time-analysis">
+                            <h3>Time-based Analysis</h3>
+                            <canvas id="timeChart" width="600" height="300"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Activity Log Section -->
+                <section class="content-section" id="activitySection">
+                    <div class="activity-controls">
+                        <div class="filters">
+                            <select id="activityFilter">
+                                <option value="all">All Events</option>
+                                <option value="login">Login Events</option>
+                                <option value="anomaly">Anomalies</option>
+                                <option value="drift">Drift Events</option>
+                            </select>
+                            <input type="date" id="dateFilter">
+                        </div>
+                        <button class="refresh-btn" id="refreshActivity">
+                            <i class="fas fa-sync-alt"></i>
+                            Refresh
+                        </button>
+                    </div>
+
+                    <div class="activity-table-container">
+                        <table class="activity-table" id="activityTable">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Event Type</th>
+                                    <th>Description</th>
+                                    <th>Risk Level</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="activityTableBody">
+                                <!-- Activity data will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Settings Section -->
+                <section class="content-section" id="settingsSection">
+                    <div class="settings-grid">
+                        <div class="settings-card security-settings">
+                            <h3>Security Settings</h3>
+                            <div class="setting-group">
+                                <label class="setting-label">
+                                    <input type="checkbox" id="enableRealTimeAuth" checked>
+                                    <span>Enable Real-time Authentication</span>
+                                </label>
+                                <label class="setting-label">
+                                    <input type="checkbox" id="enableAnomalyAlerts" checked>
+                                    <span>Anomaly Detection Alerts</span>
+                                </label>
+                                <label class="setting-label">
+                                    <input type="checkbox" id="enableDriftDetection" checked>
+                                    <span>Behavioral Drift Detection</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="settings-card sensitivity-settings">
+                            <h3>Sensitivity Settings</h3>
+                            <div class="setting-group">
+                                <div class="slider-setting">
+                                    <label>Authentication Threshold</label>
+                                    <input type="range" id="authThreshold" min="0.1" max="1.0" step="0.1" value="0.7">
+                                    <span class="slider-value">0.7</span>
+                                </div>
+                                <div class="slider-setting">
+                                    <label>Anomaly Sensitivity</label>
+                                    <input type="range" id="anomalySensitivity" min="0.1" max="1.0" step="0.1" value="0.8">
+                                    <span class="slider-value">0.8</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Security Alert Modal -->
+    <div class="modal-overlay" id="securityAlertModal" style="display: none;">
+        <div class="modal-content alert-modal">
+            <div class="modal-header">
+                <div class="alert-icon" id="alertIcon">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <h3 id="alertTitle">Security Alert</h3>
+            </div>
+            <div class="modal-body">
+                <p id="alertMessage">Anomalous behavior detected.</p>
+                <div class="alert-details" id="alertDetails">
+                    <!-- Alert details will be populated here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn primary-btn" id="acknowledgeAlert">
+                    Acknowledge
+                </button>
+                <button class="modal-btn secondary-btn" id="investigateAlert">
+                    Investigate
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Area for Behavioral Monitoring -->
+    <div class="test-area" id="testArea" style="display: none;">
+        <div class="test-content">
+            <h3>Behavioral Test Area</h3>
+            <p>Use this area to test the behavioral monitoring system. Type and move your mouse naturally.</p>
+            <textarea placeholder="Type here to generate keystroke data..." rows="5"></textarea>
+            <div class="test-buttons">
+                <button id="startTest">Start Test</button>
+                <button id="stopTest">Stop Test</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="{{ url_for('static', filename='js/challenge.js') }}"></script>
+</body>
+</html>   
