@@ -20,12 +20,13 @@ A sophisticated real-time continuous authentication system using behavioral biom
 - **Session Management** - Secure session handling with automatic cleanup
 
 ### 🧠 Machine Learning Models
-- **GRU (Gated Recurrent Unit)** - Sequential pattern analysis
-- **Autoencoder** - Anomaly detection through reconstruction loss
+- **GRU (Gated Recurrent Unit)** - Sequential pattern analysis with dynamic feature dimensions
+- **Autoencoder** - Anomaly detection through reconstruction loss with adaptive encoding
 - **One-Class SVM** - Outlier detection for genuine user patterns
 - **Incremental k-NN** - Adaptive classification with sliding windows
 - **Passive-Aggressive Classifier** - Online learning for real-time updates
 - **Isolation Forest** - Anomaly detection for rare behavioral patterns
+- **Dynamic Dimension Measurement** - Automatic feature dimension detection and normalization
 
 ### 🎨 Modern UI/UX
 - **Dark Theme Design** - Professional cybersecurity aesthetic
@@ -33,6 +34,16 @@ A sophisticated real-time continuous authentication system using behavioral biom
 - **Real-time Monitoring** - Live behavioral analytics dashboard
 - **Interactive Calibration** - Engaging setup process with visual feedback
 - **Animated Components** - Smooth transitions and micro-interactions
+
+## 🔧 Recent Improvements
+
+### v2.1.0 - Dimension Fix & Stability Updates
+- **✅ Fixed Feature Dimension Mismatch**: Automatic measurement and normalization of feature dimensions (18 keystroke + 20 mouse = 38 total)
+- **✅ Session Join Bug Fix**: Resolved undefined variable error in WebSocket session handling
+- **✅ Enhanced Configuration**: Updated thresholds for better accuracy (confidence: 0.6, anomaly: 0.36)
+- **✅ Testing Infrastructure**: Added `test_training.py` for dimension verification
+- **✅ Reduced Calibration Time**: Minimum calibration reduced from 5 minutes to 30 seconds
+- **✅ Improved Logging**: Added dimension normalization logs and training verification prints
 
 ## 🏗️ Architecture
 
@@ -115,13 +126,18 @@ continuous-auth-backend/
 
 6. **Run the application**
    ```bash
-   python run.py
+   python app.py
    ```
 
-7. **Access the application**
+7. **Verify system readiness**
+   ```bash
+   python test_training.py
+   ```
+
+8. **Access the application**
    - Open your browser to `http://localhost:5000`
    - Create a new account or use demo credentials
-   - Complete the behavioral calibration process
+   - Complete the behavioral calibration process (30 seconds minimum)
    - Experience real-time authentication monitoring
 
 ## 📖 Usage Guide
@@ -136,7 +152,7 @@ continuous-auth-backend/
 - **Typing Calibration**: Complete 5 typing passages to establish keystroke patterns
 - **Mouse Calibration**: Complete 4 interactive mouse exercises
 - The system analyzes timing, rhythm, pressure, and movement patterns
-- Calibration takes 5-10 minutes for optimal accuracy
+- Calibration takes 30 seconds to 2 minutes for optimal accuracy
 
 ### 3. Real-time Monitoring
 - Access the secure dashboard after calibration
@@ -180,19 +196,32 @@ Adjust these in `config.py`:
 
 ```python
 # Authentication Thresholds
-CONFIDENCE_THRESHOLD = 0.7          # Minimum confidence for authentication
-ANOMALY_SCORE_THRESHOLD = 0.8       # Threshold for anomaly detection
+CONFIDENCE_THRESHOLD = 0.6           # Minimum confidence for authentication
+ANOMALY_SCORE_THRESHOLD = 0.36       # Threshold for anomaly detection
 CONSECUTIVE_ANOMALIES_LIMIT = 3      # Max consecutive anomalies before alert
 
 # Behavioral Analysis
-WINDOW_SIZE = 30                     # Analysis window in seconds
-MIN_CALIBRATION_TIME = 300           # Minimum calibration time (5 minutes)
-DRIFT_DETECTION_WINDOW = 100         # Window size for drift detection
+WINDOW_SIZE = 10                     # Analysis window in seconds
+MIN_CALIBRATION_TIME = 30            # Minimum calibration time (30 seconds)
+DRIFT_DETECTION_WINDOW = 20          # Window size for drift detection
 
 # Model Training
-GRU_SEQUENCE_LENGTH = 50             # Sequence length for GRU model
+GRU_SEQUENCE_LENGTH = 10             # Sequence length for GRU model
 AUTOENCODER_ENCODING_DIM = 32        # Autoencoder compressed dimension
+ANOMALY_THRESHOLD = 0.15             # Anomaly detection threshold
 ```
+
+### Dynamic Feature Dimensions
+The system now automatically measures and adapts to feature dimensions:
+
+```python
+# Automatic dimension measurement (in behavioral_models.py)
+KEYSTROKE_DIM = 18  # Measured from extractor
+MOUSE_DIM = 20      # Measured from extractor  
+COMBINED_DIM = 38   # Combined total dimensions
+```
+
+This ensures compatibility between feature extractors and ML models.
 
 ## 🔧 Development
 
@@ -232,10 +261,21 @@ AUTOENCODER_ENCODING_DIM = 32        # Autoencoder compressed dimension
 
 ### Testing
 
+#### Automated Testing
+```bash
+# Run dimension verification test
+python test_training.py
+
+# This verifies:
+# - Feature dimensions are correctly measured (18 keystroke + 20 mouse = 38 total)
+# - ML models can train successfully with measured dimensions
+# - Prediction pipeline works without dimension mismatches
+```
+
 #### Manual Testing
 ```bash
 # Run with debug mode
-DEBUG=True python run.py
+DEBUG=True python app.py
 
 # Test different user scenarios
 # 1. New user registration and calibration
@@ -300,6 +340,31 @@ DEBUG=True python run.py
 
 ### Common Issues
 
+#### Feature Dimension Mismatch (FIXED)
+**Problem**: Training fails with "18 != 38" dimension errors
+**Solution**: The system now automatically measures feature dimensions:
+```bash
+# Run dimension verification
+python test_training.py
+
+# If dimensions don't match, the system will:
+# - Measure actual dimensions from feature extractor
+# - Normalize features to expected sizes
+# - Log dimension adjustments for debugging
+```
+
+#### Session Join Errors (FIXED)
+**Problem**: "Session error: Please log in again" during calibration
+**Solution**: Fixed undefined variable bug in `handle_join_session()`:
+```python
+# Before (buggy)
+session_start_times[user_id] = time.time()  # user_id undefined
+
+# After (fixed)  
+user_id = session_data['user_id']
+session_start_times[user_id] = time.time()
+```
+
 #### Installation Problems
 ```bash
 # TensorFlow installation issues
@@ -317,10 +382,11 @@ python -c "from app import create_app; app, socketio = create_app()"
 ```
 
 #### Model Training Failures
-- Ensure sufficient calibration data (minimum 5 minutes)
+- Ensure sufficient calibration data (minimum 30 seconds)
 - Check feature extraction output for valid data
 - Verify model save directory permissions
 - Monitor memory usage during training
+- Run `test_training.py` to verify dimension compatibility
 
 #### WebSocket Connection Issues
 - Check firewall settings for port 5000
@@ -415,10 +481,11 @@ export SSL_KEY_PATH="/path/to/key.pem"
 ## 🎯 Quick Demo
 
 1. **Start the system**: `python app.py`
-2. **Open browser**: Navigate to `http://localhost:5000`
-3. **Register**: Create account with strong password
-4. **Calibrate**: Complete 10-minute behavioral training
-5. **Monitor**: Watch real-time authentication in dashboard
-6. **Test**: Try different typing/mouse patterns to see anomaly detection
+2. **Verify dimensions**: `python test_training.py` (should show "SYSTEM READY")
+3. **Open browser**: Navigate to `http://localhost:5000`
+4. **Register**: Create account with strong password
+5. **Calibrate**: Complete 30-second behavioral training
+6. **Monitor**: Watch real-time authentication in dashboard
+7. **Test**: Try different typing/mouse patterns to see anomaly detection
 
 *Thank you*
