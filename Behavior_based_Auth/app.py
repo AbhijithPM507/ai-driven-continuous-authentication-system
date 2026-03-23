@@ -119,11 +119,12 @@ def create_app(config_name='development'):
     user_extractors = {}  # user_id -> BehavioralFeatureExtractor
     user_drift_detectors = {}  # user_id -> BehavioralDriftDetector
     
-    # Behavioral data buffers for real-time processing
+    # Behavioral data buffers for rolling window real-time processing
     behavioral_buffers = defaultdict(lambda: {
-        'keystroke': deque(maxlen=1000),
-        'mouse': deque(maxlen=1000),
-        'recent_features': deque(maxlen=100)
+        'keystrokes': deque(maxlen=200),  # rolling buffer holds last 200 keystrokes
+        'mouse': deque(maxlen=500),
+        'keystroke_count_since_last_classification': 0,
+        'feature_buffer': []
     })
     
     # Track consecutive anomalies per user
@@ -807,49 +808,61 @@ def create_app(config_name='development'):
                 emit('error', {'error': 'Session expired'})
                 return
             
-            data_type = data.get('type')
-            raw_events = data.get('events', [])
-            timestamp = data.get('timestamp', time.time())
-            
-            if not raw_events or data_type not in ['keystroke', 'mouse']:
-                logger.warning(f"Invalid behavioral data: type={data_type}, events={len(raw_events)}")
-                return
-            
             # Initialize components if needed
             initialize_user_components(user_id)
             
-            # Extract features with enhanced error handling
+            # Add new keystrokes to rolling buffer
+            new_keystrokes = data.get('keystroke_data', [])
+            behavioral_buffers[user_id]['keystrokes'].extend(new_keystrokes)
+            behavioral_buffers[user_id]['keystroke_count_since_last_classification'] += len(new_keystrokes)
+            
+            # Rolling window constants
+            WINDOW_SIZE = 100
+            STEP_SIZE = 25
+            
+            count_since_last = behavioral_buffers[user_id]['keystroke_count_since_last_classification']
+            total_keystrokes = len(behavioral_buffers[user_id]['keystrokes'])
+            
+            print(f"[BUFFER] {total_keystrokes} total keystrokes, {count_since_last} since last classification")
+            
+            if total_keystrokes < WINDOW_SIZE:
+                # Not enough data yet
+                print(f"[FILLING] {total_keystrokes}/{WINDOW_SIZE} keystrokes collected")
+                return  # skip classification until buffer is full
+            
+            if count_since_last < STEP_SIZE:
+                # Not enough new keystrokes since last classification
+                return  # wait for more
+            
+            # Reset step counter
+            behavioral_buffers[user_id]['keystroke_count_since_last_classification'] = 0
+            
+            # Use last WINDOW_SIZE keystrokes for classification
+            window_keystrokes = list(behavioral_buffers[user_id]['keystrokes'])[-WINDOW_SIZE:]
+            window_mouse = list(behavioral_buffers[user_id]['mouse'])[-100:]
+            
+            print(f"[WINDOW] Classifying on {len(window_keystrokes)} keystrokes")
+            
+            # Extract features from window keystrokes
             try:
                 extractor = user_extractors[user_id]
+                keystroke_features = extractor.extract_keystroke_features(window_keystrokes)
                 
-                if data_type == 'keystroke':
-                    features = extractor.extract_keystroke_features(raw_events)
-                else:
-                    features = extractor.extract_mouse_features(raw_events)
-                
-                if not features:
-                    logger.warning(f"No features extracted from {data_type} data")
+                if not keystroke_features:
+                    logger.warning("No keystroke features extracted from window")
                     return
                 
-                # Validate and fix feature dimensions
-                if data_type == 'keystroke':
-                    features = extractor._normalize_keystroke_features(features)
-                else:
-                    features = extractor._normalize_mouse_features(features)
+                keystroke_features = extractor._normalize_keystroke_features(keystroke_features)
                 
             except Exception as e:
-                logger.error(f"Feature extraction error for {data_type}: {e}")
+                logger.error(f"Keystroke feature extraction error: {e}")
                 emit('error', {'error': f'Feature extraction failed: {str(e)}'})
                 return
-            
-            # Store in buffer
-            behavioral_buffers[user_id][data_type].append(raw_events)
-            behavioral_buffers[user_id]['recent_features'].append(features)
             
             # Store in database with error handling
             try:
                 db_manager.store_behavioral_data(
-                    user_id, session_id, data_type, features, raw_events
+                    user_id, session_id, 'keystroke', keystroke_features, window_keystrokes
                 )
             except Exception as e:
                 logger.warning(f"Database storage error: {e}")
@@ -857,27 +870,28 @@ def create_app(config_name='development'):
             # Perform real-time authentication (only if calibrated)
             if session_data.get('calibration_complete', False):
                 try:
-                    auth_result = perform_real_time_authentication(user_id, features, data_type)
+                    auth_result = perform_real_time_authentication(user_id, keystroke_features, 'keystroke')
                     
                     # Emit authentication result
                     emit('auth_result', auth_result)
                     
+                    # Calculate confidence based on buffer fill level
+                    confidence = min(total_keystrokes / 100.0, 1.0)
+                    
                     # Check for security alerts
                     if auth_result.get('alert_level', 0) > 0:
-                        confidence = auth_result.get('confidence', 0)
                         score = auth_result.get('anomaly_score', 0)
                         anomaly_detected = auth_result.get('anomaly_detected', False)
-                        alert_level = auth_result.get('alert_level', 0)
                         
-                        # Treat any alert level >= 1 as anomaly
+                        # Treat any score < 0.42 as anomaly
                         is_anomaly = score < 0.42
                         
                         # Status line for terminal
                         status = "ANOMALY" if is_anomaly else "AUTHORIZED"
                         print(f"[{status}] score={score:.3f} conf={confidence:.2f} strikes={consecutive_anomalies.get(user_id,0)}/3")
                         
-                        # Only make decisions if confidence is sufficient
-                        if confidence >= 0.15:
+                        # Only make decisions if confidence is sufficient (at least 100 keystrokes)
+                        if total_keystrokes >= WINDOW_SIZE:
                             if is_anomaly:
                                 consecutive_anomalies[user_id] = consecutive_anomalies.get(user_id, 0) + 1
                                 print(f"[STRIKE] {consecutive_anomalies[user_id]}/3")
@@ -900,17 +914,13 @@ def create_app(config_name='development'):
                                     lockdown_cooldown[user_id] = now
                                     consecutive_anomalies[user_id] = 0
                                     trigger_lockdown(user_id, score)
-                                    socketio.emit('lockdown_initiated', {'countdown': 10})
+                                    emit('lockdown_initiated', {'countdown': 10})
                                 else:
                                     remaining = int(30 - (now - last))
                                     print(f"[COOLDOWN] {remaining}s remaining")
                                     consecutive_anomalies[user_id] = 0
                         else:
-                            print(f"[WAITING] confidence={confidence:.2f} — need 0.15 to start")
-                    # else:
-                    #     # No alert - reset counter
-                    #     if user_id in consecutive_anomalies:
-                    #         consecutive_anomalies[user_id] = 0
+                            print(f"[FILLING] {total_keystrokes}/{WINDOW_SIZE}")
                     
                     # Log anomalies
                     if auth_result.get('anomaly_detected', False):
@@ -919,8 +929,8 @@ def create_app(config_name='development'):
                                 user_id, session_id, 'anomaly',
                                 {
                                     'anomaly_score': auth_result['anomaly_score'],
-                                    'confidence': auth_result['confidence'],
-                                    'data_type': data_type
+                                    'confidence': confidence,
+                                    'data_type': 'keystroke'
                                 },
                                 request.remote_addr
                             )
@@ -937,40 +947,26 @@ def create_app(config_name='development'):
             emit('error', {'error': 'Failed to process behavioral data'})
     
     def perform_real_time_authentication(user_id: int, features: Dict, data_type: str) -> Dict:
-        """Enhanced real-time authentication with proper error handling"""
+        """Enhanced real-time authentication with proper error handling and rolling window support"""
         try:
-            # Get recent features for ensemble prediction
-            recent_features = list(behavioral_buffers[user_id]['recent_features'])
-            
-            if len(recent_features) < 5:
-                return {
-                    'authenticity_score': 0.5,
-                    'confidence': 0.0,
-                    'anomaly_detected': False,
-                    'anomaly_score': 0.0,
-                    'alert_level': 0,
-                    'alert_message': 'Insufficient data for analysis'
-                }
-            
             # Initialize components if needed
             initialize_user_components(user_id)
             
-            # Ensure feature consistency
+            # Use the provided features for ensemble prediction
             extractor = user_extractors[user_id]
-            normalized_features = []
             
-            for feature_dict in recent_features:
-                try:
-                    # Fix feature dimensions to ensure consistency
-                    fixed_features = extractor.fix_feature_dimensions(feature_dict)
-                    normalized_features.append(fixed_features)
+            # Wrap single feature in list for ensemble processing
+            normalized_features = []
+            try:
+                fixed_features = extractor.fix_feature_dimensions(features)
+                normalized_features.append(fixed_features)
                     
-                except Exception as e:
-                    logger.warning(f"Feature normalization error: {e}")
-                    # Use default features as fallback
-                    default_features = {**extractor._get_empty_keystroke_features(), 
-                                      **extractor._get_empty_mouse_features()}
-                    normalized_features.append(default_features)
+            except Exception as e:
+                logger.warning(f"Feature normalization error: {e}")
+                # Use default features as fallback
+                default_features = {**extractor._get_empty_keystroke_features(), 
+                                  **extractor._get_empty_mouse_features()}
+                normalized_features.append(default_features)
             
             # Validate feature dimensions
             if normalized_features:
@@ -987,16 +983,16 @@ def create_app(config_name='development'):
                 ensemble_result = user_models[user_id].predict_ensemble(normalized_features)
                 
                 auth_score = ensemble_result['ensemble']['authenticity_score']
-                confidence = ensemble_result['ensemble']['confidence']
+                model_confidence = ensemble_result['ensemble']['confidence']
                 consensus = ensemble_result['ensemble']['consensus']
                 
             except Exception as e:
                 logger.error(f"Ensemble prediction error: {e}")
                 # Fallback to simple prediction
                 auth_score = 0.7 + random.uniform(-0.1, 0.1)  # Default safe score with slight variation
-                confidence = 0.5 + random.uniform(-0.1, 0.1)
+                model_confidence = 0.5 + random.uniform(-0.1, 0.1)
                 consensus = 0.8
-                ensemble_result = {'ensemble': {'authenticity_score': auth_score, 'confidence': confidence, 'consensus': consensus}}
+                ensemble_result = {'ensemble': {'authenticity_score': auth_score, 'confidence': model_confidence, 'consensus': consensus}}
             
             # Calculate anomaly score safely
             anomaly_score = max(0.0, min(1.0, 1.0 - auth_score))
@@ -1017,14 +1013,14 @@ def create_app(config_name='development'):
             
             try:
                 anomaly_threshold = app.config.get('ANOMALY_SCORE_THRESHOLD', 0.8)
-                print(f"[ANOMALY CHECK] User {user_id}: anomaly_score={anomaly_score:.3f}, threshold={anomaly_threshold}, confidence={confidence:.3f}")
+                print(f"[ANOMALY CHECK] User {user_id}: anomaly_score={anomaly_score:.3f}, threshold={anomaly_threshold}, confidence={model_confidence:.3f}")
                 
                 if anomaly_score > anomaly_threshold:
-                    if confidence > 0.7:
+                    if model_confidence > 0.7:
                         alert_level = 3
                         alert_message = "High confidence anomaly detected"
                         recommendations = ["Immediate re-authentication required"]
-                    elif confidence > 0.5:
+                    elif model_confidence > 0.5:
                         alert_level = 2
                         alert_message = "Moderate confidence anomaly detected"
                         recommendations = ["Monitor closely"]
@@ -1043,15 +1039,6 @@ def create_app(config_name='development'):
             except Exception as e:
                 logger.warning(f"Alert level calculation error: {e}")
             
-            # Boost confidence based on session time
-            import time
-            elapsed = time.time() - session_start_times.get(user_id, time.time())
-            # Boost confidence based on time spent in session
-            # After 1 minute: minimum 0.20, after 2 min: 0.30, after 3 min: 0.40
-            time_boost = min(elapsed / 180.0, 0.40)  # max 0.40 boost after 3 minutes
-            confidence = max(confidence, time_boost)
-            confidence = min(confidence, 1.0)  # cap at 1.0
-            
             # Update model with feedback (safely)
             try:
                 user_models[user_id].update_models(features, is_genuine=True)
@@ -1060,7 +1047,7 @@ def create_app(config_name='development'):
             
             return {
                 'authenticity_score': float(auth_score),
-                'confidence': float(confidence),
+                'confidence': float(model_confidence),
                 'consensus': float(consensus),
                 'anomaly_detected': bool(anomaly_score > app.config.get('ANOMALY_SCORE_THRESHOLD', 0.8)),
                 'anomaly_score': float(anomaly_score),
