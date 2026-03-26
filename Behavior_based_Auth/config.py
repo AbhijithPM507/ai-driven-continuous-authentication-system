@@ -40,7 +40,7 @@ class Config:
     DRIFT_DETECTION_WINDOW = 20
     
     # Authentication Thresholds
-    CONFIDENCE_THRESHOLD = 0.6
+    CONFIDENCE_THRESHOLD = 0.4
     ANOMALY_SCORE_THRESHOLD = 0.36
     CONSECUTIVE_ANOMALIES_LIMIT = 3  # adjusted for fast typing tolerance
     
