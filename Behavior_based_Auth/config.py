@@ -1,102 +1,37 @@
 import os
-from datetime import timedelta
+from pathlib import Path
 
-class Config:
-    """Base configuration class"""
-    
-    # Flask Configuration
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-key-change-in-production'
-    DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
-    
-    # JWT Configuration
-    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or 'jwt-secret-change-in-production'
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
-    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
-    
-    # Database Configuration
-    DATABASE_PATH = os.environ.get('DATABASE_PATH') or 'database/auth_system.db'
-    
-    # Model Configuration
-    MODELS_BASE_PATH = os.environ.get('MODELS_PATH') or 'models/saved'
-    MODEL_RETRAIN_THRESHOLD = 0.3  # Retrain if accuracy drops below 70%
-    
-    # Behavioral Analysis Configuration
-    WINDOW_SIZE = 30  # seconds
-    MIN_CALIBRATION_TIME = 300  # 5 minutes minimum calibration
-    KEYSTROKE_FEATURES = [
-        'key_hold_time', 'flight_time', 'typing_speed', 
-        'pause_variance', 'digraph_timing', 'trigraph_timing'
-    ]
-    MOUSE_FEATURES = [
-        'velocity', 'acceleration', 'jerk', 'curvature',
-        'click_duration', 'dwell_time', 'direction_changes'
-    ]
-    
-    # ML Model Configuration
+APP_DIR = Path(__file__).parent
+DATA_DIR = APP_DIR / 'data'
+MODELS_DIR = APP_DIR / 'models' / 'saved'
+WEB_DIR = APP_DIR / 'web'
+
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(MODELS_DIR, exist_ok=True)
+
+class DesktopConfig:
+    DATABASE_PATH = str(DATA_DIR / 'locksy.db')
+    DATABASE_KEY = os.environ.get('LOCKSY_DB_KEY') or 'default-locksy-key-change-me'
+
+    MODELS_BASE_PATH = str(MODELS_DIR)
+    MODEL_RETRAIN_THRESHOLD = 0.3
+
+    WINDOW_SIZE = 30
+    ANOMALY_SCORE_THRESHOLD = 0.8
+    CONFIDENCE_THRESHOLD = 0.7
+    CONSECUTIVE_ANOMALIES_LIMIT = 3
+
     GRU_SEQUENCE_LENGTH = 50
     GRU_HIDDEN_UNITS = 64
     AUTOENCODER_ENCODING_DIM = 32
     ANOMALY_THRESHOLD = 0.15
     DRIFT_DETECTION_WINDOW = 100
-    
-    # Authentication Thresholds
-    CONFIDENCE_THRESHOLD = 0.7
-    ANOMALY_SCORE_THRESHOLD = 0.8
-    CONSECUTIVE_ANOMALIES_LIMIT = 3
-    
-    # WebSocket Configuration
-    SOCKETIO_CORS_ALLOWED_ORIGINS = "*"
-    SOCKETIO_LOGGER = False
-    SOCKETIO_ENGINEIO_LOGGER = False
-    
-    # Security Configuration
-    BCRYPT_LOG_ROUNDS = 12
-    SESSION_TIMEOUT = timedelta(hours=8)
-    MAX_LOGIN_ATTEMPTS = 5
-    LOCKOUT_DURATION = timedelta(minutes=15)
-    
-    # Feature Extraction Configuration
-    KEYSTROKE_BUFFER_SIZE = 1000
-    MOUSE_BUFFER_SIZE = 2000
-    FEATURE_UPDATE_INTERVAL = 5  # seconds
-    
-    # Drift Detection Configuration
-    DRIFT_ALPHA = 0.05  # Statistical significance level
+    DRIFT_ALPHA = 0.05
     DRIFT_MIN_SAMPLES = 30
     BEHAVIORAL_CHANGE_THRESHOLD = 0.25
-    
-    @staticmethod
-    def init_app(app):
-        """Initialize application with configuration"""
-        pass
 
-class DevelopmentConfig(Config):
-    """Development configuration"""
-    DEBUG = True
-    TESTING = False
+    KEYSTROKE_BUFFER_SIZE = 1000
+    MOUSE_BUFFER_SIZE = 2000
+    FEATURE_UPDATE_INTERVAL = 5
 
-class ProductionConfig(Config):
-    """Production configuration"""
-    DEBUG = False
-    TESTING = False
-    
-    # Enhanced security for production
-    BCRYPT_LOG_ROUNDS = 14
-    CONFIDENCE_THRESHOLD = 0.8
-    ANOMALY_SCORE_THRESHOLD = 0.75
-    CONSECUTIVE_ANOMALIES_LIMIT = 2
-
-class TestingConfig(Config):
-    """Testing configuration"""
-    TESTING = True
-    DEBUG = True
-    DATABASE_PATH = ':memory:'  # In-memory database for testing
-    BCRYPT_LOG_ROUNDS = 4  # Faster for testing
-
-# Configuration dictionary
-config = {
-    'development': DevelopmentConfig,
-    'production': ProductionConfig,
-    'testing': TestingConfig,
-    'default': DevelopmentConfig
-}
+    EEL_PORT = 8080

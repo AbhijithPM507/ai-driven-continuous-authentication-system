@@ -1,424 +1,355 @@
-# Behavior Based Continuous Authentication System
-## 🛡️ Advanced Behavioral Authentication System
+# Locksy — Continuous Behavioral Authentication
 
-A sophisticated real-time continuous authentication system using behavioral biometrics, powered by machine learning and designed with modern web technologies.
+A fully offline, standalone desktop application that continuously authenticates the user by analyzing keystroke dynamics and mouse behavior using an ensemble of machine learning models. All data stays on the local machine — no network dependencies.
 
-![image](https://github.com/user-attachments/assets/6709bbef-fb3c-4af3-a342-2f2e499f282e)
+## Table of Contents
 
-![image](https://github.com/user-attachments/assets/2b875343-07fb-4883-b946-61284c4f14d8)
+- [Overview](#overview)
+- [Features](#features)
+- [Technical Stack](#technical-stack)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Machine Learning Models](#machine-learning-models)
+- [Feature Extraction](#feature-extraction)
+- [Security Features](#security-features)
+- [Database Schema](#database-schema)
+- [Packaging](#packaging)
 
-![image](https://github.com/user-attachments/assets/e584ffa2-5d04-4442-beee-a6180ca63027)
+## Overview
 
-## 🌟 Features
+Locksy replaces traditional password-based authentication with continuous behavioral biometrics. It monitors how you type and move your mouse, builds a unique behavioral profile using ML, and locks your workstation if anomalous behavior is detected. Everything runs locally — no data ever leaves your machine.
 
-### 🔐 Core Security Features
-- **Continuous Authentication** - Real-time user verification throughout active sessions
-- **Behavioral Biometrics** - Keystroke dynamics and mouse behavior analysis
-- **Multi-Model ML Ensemble** - GRU, Autoencoder, One-Class SVM, k-NN, Passive-Aggressive, and Isolation Forest
-- **Drift Detection** - Adaptive learning that handles behavioral changes over time
-- **Anomaly Detection** - Real-time identification of suspicious activities
-- **Session Management** - Secure session handling with automatic cleanup
+## Features
 
-### 🧠 Machine Learning Models
-- **GRU (Gated Recurrent Unit)** - Sequential pattern analysis
-- **Autoencoder** - Anomaly detection through reconstruction loss
-- **One-Class SVM** - Outlier detection for genuine user patterns
-- **Incremental k-NN** - Adaptive classification with sliding windows
-- **Passive-Aggressive Classifier** - Online learning for real-time updates
-- **Isolation Forest** - Anomaly detection for rare behavioral patterns
+- **Behavioral Biometric Analysis**: Captures keystroke timing and mouse movement patterns via OS-level hooks (pynput)
+- **Continuous Authentication**: Real-time verification every 5 seconds during active use
+- **Multi-Model Ensemble**: GRU neural network, autoencoder, One-Class SVM, incremental k-NN, Passive-Aggressive classifier, and Isolation Forest
+- **OS-Level Lock**: Workstation lockdown on sustained anomalies — Windows (LockWorkStation), macOS (CGSession), Linux (xdg-screensaver)
+- **Model Integrity Verification**: SHA-256 hashing with HMAC signing to detect model file tampering
+- **Encrypted Local Storage**: SQLCipher for the SQLite database (falls back to plain SQLite if unavailable)
+- **Offline-First**: Zero networking — no Flask, no WebSockets, no JWT, no HTTP
+- **Single-User**: Simplified single-profile design, no registration or login
 
-### 🎨 Modern UI/UX
-- **Dark Theme Design** - Professional cybersecurity aesthetic
-- **Responsive Layout** - Mobile-friendly adaptive interface
-- **Real-time Monitoring** - Live behavioral analytics dashboard
-- **Interactive Calibration** - Engaging setup process with visual feedback
-- **Animated Components** - Smooth transitions and micro-interactions
+## Technical Stack
 
-## 🏗️ Architecture
+### Desktop Framework
+- **Eel**: Python-to-JS bridge for the desktop UI (Chrome/Edge embedded)
+- **pynput**: OS-level global keyboard and mouse capture
+
+### ML/AI
+- **TensorFlow/Keras**: GRU networks, autoencoders
+- **scikit-learn**: One-Class SVM, Isolation Forest, k-NN, Passive-Aggressive
+- **NumPy, SciPy, Pandas**: Numerical computing and statistics
+
+### Storage & Integrity
+- **SQLite / pysqlcipher3**: Local encrypted database
+- **joblib**: Model serialization
+- **HMAC-SHA256**: Model file integrity verification
+
+### Packaging
+- **PyInstaller**: Bundles everything into a standalone executable
+
+## Architecture
 
 ```
-continuous-auth-backend/
-├── app.py                          # Main Flask application
-├── config.py                       # Configuration settings
-├── requirements.txt                # Python dependencies
-│
-├── models/                         # ML models and algorithms
-│   ├── behavioral_models.py        # Ensemble classifier implementation
-│   └── saved/{user_id}/            # Per-user trained models
-│       ├── model_gru.h5
-│       ├── model_autoencoder.h5
-│       └── sklearn_models.pkl
-│
-├── utils/                          # Utility modules
-│   ├── feature_extractor.py        # Behavioral feature extraction
-│   └── drift_detector.py           # Behavioral drift detection
-│
-├── database/                       # Database management
-│   ├── db_manager.py               # SQLite database operations
-│   └── auth_system.db              # SQLite database file
-│
-├── static/                         # Frontend assets
-│   ├── css/
-│   │   └── styles.css              # Modern dark theme styles
-│   └── js/
-│       ├── login.js                # Authentication interface
-│       ├── calib.js                # Calibration process
-│       └── challenge.js            # Real-time monitoring dashboard
-│
-└── templates/                      # HTML templates
-    ├── login.html                  # Login and registration
-    ├── calib.html                  # Behavioral calibration
-    └── challenge.html              # Secure dashboard
+┌──────────────────────────────────────────────────────────────────┐
+│                         Desktop Window (Eel)                      │
+│  ┌──────────────┐    ┌──────────────────┐    ┌────────────────┐  │
+│  │ calib.html   │    │  challenge.html  │    │ Chart.js       │  │
+│  │ calib.js     │    │  challenge.js    │    │ Dashboard      │  │
+│  └──────┬───────┘    └────────┬─────────┘    └────────────────┘  │
+│         │                     │                                   │
+│         └─────────┬───────────┘                                   │
+│                   │  eel.expose() / eel.callback()                │
+└───────────────────┼───────────────────────────────────────────────┘
+                    │
+┌───────────────────▼───────────────────────────────────────────────┐
+│                         app.py (Eel entry point)                   │
+│                                                                   │
+│  ┌──────────────┐    ┌────────────────────┐    ┌───────────────┐  │
+│  │ pynput       │    │  Monitoring Loop   │    │ Eel Exposed   │  │
+│  │ Keyboard/    │───►│  (every 5s):       │    │ Functions:    │  │
+│  │ Mouse        │    │  buffer → extract  │    │ • calibration │  │
+│  │ Listeners    │    │  → ensemble → emit │    │ • auth check  │  │
+│  └──────┬───────┘    │  → lock if needed  │    │ • activity log│  │
+│         │            └────────┬───────────┘    └───────────────┘  │
+│         ▼                     │                                    │
+│  ┌──────────────┐            │                                    │
+│  │ Feature      │◄───────────┘                                    │
+│  │ Buffer       │                                                  │
+│  │ (deques)     │                                                  │
+│  └──────────────┘                                                  │
+└───────────────────┬───────────────────────────────────────────────┘
+                    │
+    ┌───────────────┼───────────────────────┐
+    │               │                       │
+┌───▼──────────┐ ┌──▼──────────────┐  ┌────▼──────────────┐
+│ Feature      │ │ ML Ensemble     │  │ Drift Detector    │
+│ Extractor    │ │ (6 models)      │  │ (statistical)     │
+│ (38 features)│ │                 │  │                   │
+└──────────────┘ └─────────────────┘  └───────────────────┘
+                    │
+                    ▼
+┌──────────────────────────────────────┐
+│  Database Manager (SQLite/SQLCipher) │
+│  ┌──────────┐ ┌──────────┐          │
+│  │ profile  │ │behavioral│          │
+│  │          │ │_data     │          │
+│  ├──────────┤ ├──────────┤          │
+│  │auth_event│ │model_    │          │
+│  │s         │ │metadata  │          │
+│  └──────────┘ └──────────┘          │
+└──────────────────────────────────────┘
 ```
 
-## 🚀 Quick Start
+## Project Structure
+
+```
+Behavior_based_Auth/
+├── app.py                          # Eel desktop entry point
+├── config.py                       # DesktopConfig (paths, thresholds)
+├── requirements.txt                # Dependencies
+├── locksy.spec                     # PyInstaller spec file
+│
+├── database/
+│   └── db_manager.py              # SQLite/SQLCipher database (single-user)
+│
+├── models/
+│   ├── behavioral_models.py       # 6 ML models + EnsembleBehavioralClassifier
+│   └── saved/                     # Trained model files
+│
+├── utils/
+│   ├── feature_extractor.py       # 38-feature extraction (18 keystroke + 20 mouse)
+│   ├── drift_detector.py          # Statistical behavioral drift detection
+│   ├── locks.py                   # OS-level workstation lock
+│   └── security.py                # SHA-256 model hashing and integrity verification
+│
+└── web/
+    ├── calib.html                 # Calibration wizard UI
+    ├── challenge.html             # Dashboard / monitoring UI
+    ├── css/
+    │   └── styles.css             # Application styling
+    └── js/
+        ├── calib.js               # Calibration data collection
+        └── challenge.js           # Dashboard, charts, real-time updates
+```
+
+## Installation
 
 ### Prerequisites
-- Python 3.8 and not more than 3.11
-- Node.js (for development tools, optional)
-- Modern web browser (Chrome, Firefox, Safari, Edge)
+- Python 3.8+
+- pip (Python package manager)
+- Chrome or Edge (for Eel's browser window)
 
-### Installation
+### Steps
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/Magizharasi/Behavior_based_Auth
-   cd continuous-auth-backend
-   ```
+1. **Clone and enter the project**
+```bash
+cd Behavior_based_Auth
+```
 
-2. **Create virtual environment**
-   ```bash
-   python -m venv venv
-   
-   # Windows
-   venv\Scripts\activate
-   
-   # macOS/Linux
-   source venv/bin/activate
-   ```
+2. **Create a virtual environment** (recommended)
+```bash
+python -m venv venv
+# On Windows:
+venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+```
 
 3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Set up environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
-
-5. **Initialize the database**
-   ```bash
-   python -c "from app import create_app; app, socketio = create_app(); print('Database initialized!')"
-   ```
-
-6. **Run the application**
-   ```bash
-   python run.py
-   ```
-
-7. **Access the application**
-   - Open your browser to `http://localhost:5000`
-   - Create a new account or use demo credentials
-   - Complete the behavioral calibration process
-   - Experience real-time authentication monitoring
-
-## 📖 Usage Guide
-
-### 1. User Registration & Login
-- Navigate to the login page
-- Create a new account with username, email, and secure password
-- Password strength is validated in real-time
-- Login with your credentials
-
-### 2. Behavioral Calibration
-- **Typing Calibration**: Complete 5 typing passages to establish keystroke patterns
-- **Mouse Calibration**: Complete 4 interactive mouse exercises
-- The system analyzes timing, rhythm, pressure, and movement patterns
-- Calibration takes 5-10 minutes for optimal accuracy
-
-### 3. Real-time Monitoring
-- Access the secure dashboard after calibration
-- Behavioral patterns are continuously monitored
-- Authentication scores update in real-time
-- Security alerts notify of potential threats
-- View behavioral analytics and drift analysis
-
-### 4. Dashboard Features
-- **Security Overview**: Real-time authentication status
-- **Behavioral Analytics**: Pattern visualization and trends
-- **Activity Log**: Comprehensive security event history
-- **Settings**: Customize sensitivity and alert preferences
-- **Drift Detection**: Monitor behavioral changes over time
-
-## ⚙️ Configuration
-
-### Environment Variables
-Create a `.env` file with the following variables:
-
-```env
-# Security
-SECRET_KEY=your-secret-key-here
-JWT_SECRET_KEY=your-jwt-secret-here
-
-# Database
-DATABASE_PATH=database/auth_system.db
-
-# Model Configuration
-MODELS_BASE_PATH=models/saved
-CONFIDENCE_THRESHOLD=0.7
-ANOMALY_THRESHOLD=0.8
-
-# Development
-DEBUG=True
-FLASK_ENV=development
+```bash
+pip install -r requirements.txt
 ```
 
-### Model Parameters
-Adjust these in `config.py`:
+4. **Run the application**
+```bash
+python app.py
+```
+
+The app will check if calibration has been completed. If not, it shows the calibration wizard. After calibration, it shows the live monitoring dashboard.
+
+## Configuration
+
+Edit `config.py` (`DesktopConfig` class) to customize behavior:
 
 ```python
+# Paths
+DATABASE_PATH         # Location of the SQLite database
+MODELS_BASE_PATH      # Where trained models are stored
+
 # Authentication Thresholds
-CONFIDENCE_THRESHOLD = 0.7          # Minimum confidence for authentication
-ANOMALY_SCORE_THRESHOLD = 0.8       # Threshold for anomaly detection
-CONSECUTIVE_ANOMALIES_LIMIT = 3      # Max consecutive anomalies before alert
+ANOMALY_SCORE_THRESHOLD   = 0.8   # Anomaly score triggers alert
+CONFIDENCE_THRESHOLD      = 0.7   # Minimum confidence for acceptance
+CONSECUTIVE_ANOMALIES_LIMIT = 3   # Lockdown trigger count
 
-# Behavioral Analysis
-WINDOW_SIZE = 30                     # Analysis window in seconds
-MIN_CALIBRATION_TIME = 300           # Minimum calibration time (5 minutes)
-DRIFT_DETECTION_WINDOW = 100         # Window size for drift detection
+# ML Model Parameters
+GRU_SEQUENCE_LENGTH     = 50     # Sequences fed to GRU
+GRU_HIDDEN_UNITS        = 64     # GRU layer size
+AUTOENCODER_ENCODING_DIM = 32    # Autoencoder bottleneck
 
-# Model Training
-GRU_SEQUENCE_LENGTH = 50             # Sequence length for GRU model
-AUTOENCODER_ENCODING_DIM = 32        # Autoencoder compressed dimension
+# Drift Detection
+DRIFT_DETECTION_WINDOW  = 100    # Sliding window size
+DRIFT_ALPHA             = 0.05   # Statistical significance
+DRIFT_MIN_SAMPLES       = 30     # Minimum samples for drift check
+
+# Buffer Sizes
+KEYSTROKE_BUFFER_SIZE   = 1000   # Max keystroke events in memory
+MOUSE_BUFFER_SIZE       = 2000   # Max mouse events in memory
+FEATURE_UPDATE_INTERVAL = 5      # Monitoring loop interval (seconds)
 ```
 
-## 🔧 Development
+### Environment Variables
+- `LOCKSY_DB_KEY`: Encryption key for the SQLCipher database (if pysqlcipher3 is installed)
 
-### Project Structure Details
+## Usage
 
-#### Backend Components
-- **`app.py`**: Main Flask application with WebSocket support
-- **`config.py`**: Centralized configuration management
-- **`database/db_manager.py`**: Database operations and user management
-- **`utils/feature_extractor.py`**: Behavioral feature extraction algorithms
-- **`utils/drift_detector.py`**: Statistical drift detection methods
-- **`models/behavioral_models.py`**: Machine learning model ensemble
+### First Run — Calibration
 
-#### Frontend Components
-- **Modern CSS**: Dark theme with glassmorphism effects
-- **Responsive Design**: Mobile-first approach with breakpoints
-- **WebSocket Integration**: Real-time behavioral data streaming
-- **Chart.js Visualizations**: Interactive behavioral analytics
-- **Progressive Enhancement**: Works without JavaScript for basic functionality
+1. Launch the app: `python app.py`
+2. The calibration wizard opens automatically
+3. **Typing exercises**: Type 5 passages naturally (WPM, accuracy, samples shown)
+4. **Mouse exercises**: Complete 4 exercises — target clicking, tracking, navigation, precision
+5. Click **Complete Calibration** — the ensemble of 6 models trains on your data
+6. Models are saved to disk with integrity hashes
+7. You're redirected to the monitoring dashboard
 
-### Adding New Features
+### Ongoing Monitoring — Dashboard
 
-#### New Behavioral Features
-1. Add feature extraction logic to `utils/feature_extractor.py`
-2. Update model training in `models/behavioral_models.py`
-3. Modify frontend data collection in JavaScript files
+The dashboard shows:
+- **Security score** and **authentication score** (0-1)
+- **Confidence level** and **anomaly risk** (Low/Medium/High)
+- **Real-time behavior chart** (auth score over time)
+- **Drift analysis** (radar chart comparing current vs. baseline)
+- **Activity log** with filterable event history
+- **Settings** for authentication threshold and anomaly sensitivity
 
-#### New ML Models
-1. Implement model class in `behavioral_models.py`
-2. Add to ensemble in `EnsembleBehavioralClassifier`
-3. Update training and prediction workflows
+### What Happens During an Anomaly
 
-#### UI Enhancements
-1. Modify templates in `templates/`
-2. Update styles in `static/css/styles.css`
-3. Add JavaScript functionality in `static/js/`
+1. pynput captures every keystroke and mouse event
+2. Every 5 seconds, the monitoring loop extracts 38 features from the event buffer
+3. All 6 ensemble models predict authenticity
+4. Weighted ensemble score is computed
+5. If anomaly score exceeds threshold:
+   - **1st occurrence**: Level 1 alert (low confidence)
+   - **2nd occurrence**: Level 2 alert (high confidence)
+   - **3rd consecutive occurrence**: **Workstation lockdown** via OS API
 
-### Testing
+## Machine Learning Models
 
-#### Manual Testing
+| Model | Weight | Type | Description |
+|-------|--------|------|-------------|
+| **GRU** | 0.25 | Sequential RNN | Binary classifier on 50-sample sequences of 38-dim features |
+| **Autoencoder** | 0.15 | Anomaly detection | Reconstruction error threshold (95th percentile) |
+| **One-Class SVM** | 0.15 | Outlier detection | Decision boundary around genuine data |
+| **Incremental k-NN** | 0.20 | Sliding window | k=5 nearest neighbors vote ratio |
+| **Passive-Aggressive** | 0.15 | Online linear | Partial-fit classifier for incremental learning |
+| **Isolation Forest** | 0.10 | Anomaly detection | Isolation path length anomaly scoring |
+
+### Ensemble Score
+
+```
+ensemble_score = Σ(weight_i × score_i × confidence_i) / Σ(weight_i × confidence_i)
+consensus = 1 - min(std(scores), 1.0)
+```
+
+## Feature Extraction
+
+`BehavioralFeatureExtractor` produces exactly **38 features** (18 keystroke + 20 mouse):
+
+### Keystroke Features (18)
+| Category | Features |
+|----------|----------|
+| Hold time | mean, std, median |
+| Flight time | mean, std, median |
+| Speed | WPM, CPM |
+| Rhythm | consistency, burst ratio, pause ratio, avg pause duration |
+| Variation | speed variance, speed trend |
+| Consistency | digraph consistency, hold time CV, flight time CV |
+| Pressure | pressure consistency |
+
+### Mouse Features (20)
+| Category | Features |
+|----------|----------|
+| Velocity | mean, std, median |
+| Acceleration | mean, std |
+| Trajectory | movement efficiency, curvature mean/std |
+| Direction | avg direction change, direction change variance |
+| Clicks | click duration mean/std, left/right click ratio |
+| Inter-click | inter-click mean/std |
+| Dwell | dwell time mean |
+| Spatial | movement area, movement centrality |
+| Smoothness | velocity smoothness |
+
+## Security Features
+
+- **No network stack**: Zero listening ports, no HTTP/WebSocket servers, no external API calls
+- **Model integrity verification**: HMAC-SHA256 hashes of all model files; verified on startup; app refuses to start monitoring if check fails
+- **Encrypted local storage**: SQLCipher database encryption (optional — falls back to plain SQLite if pysqlcipher3 unavailable)
+- **OS-level lock**: Windows `LockWorkStation`, macOS `CGSession -suspend`, Linux `xdg-screensaver lock`
+- **Event logging**: All anomaly detections and security events logged to database and file
+- **No raw content capture**: pynput listeners capture only timing metadata (key press/release timestamps), never the content of what was typed
+
+## Database Schema
+
+### `profile`
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PK | Always 1 (single-user) |
+| username | TEXT | Display name |
+| calibration_complete | INTEGER | 0 or 1 |
+| created_at | TIMESTAMP | |
+
+### `behavioral_data`
+| Column | Type | Description |
+|--------|------|-------------|
+| data_id | INTEGER PK | |
+| timestamp | TIMESTAMP | |
+| data_type | TEXT | 'keystroke' or 'mouse' |
+| features | TEXT (JSON) | Extracted 38-feature dict |
+| raw_data | TEXT (JSON) | Raw event data |
+
+### `auth_events`
+| Column | Type | Description |
+|--------|------|-------------|
+| event_id | INTEGER PK | |
+| event_type | TEXT | 'anomaly', 'drift', etc. |
+| event_data | TEXT (JSON) | Details (score, confidence) |
+| timestamp | TIMESTAMP | |
+
+### `model_metadata`
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PK | Always 1 |
+| model_version | INTEGER | |
+| last_trained | TIMESTAMP | |
+| training_samples | INTEGER | |
+| model_accuracy | REAL | |
+
+## Packaging
+
+Build a standalone executable with PyInstaller:
+
 ```bash
-# Run with debug mode
-DEBUG=True python run.py
-
-# Test different user scenarios
-# 1. New user registration and calibration
-# 2. Existing user login and monitoring
-# 3. Behavioral drift simulation
-# 4. Anomaly detection testing
+pyinstaller locksy.spec
 ```
 
-#### Security Testing
-- Test with different typing patterns
-- Simulate mouse behavior variations
-- Verify session management security
-- Test drift detection sensitivity
+The output will be in the `dist/` directory as `Locksy.exe` (Windows) or a macOS bundle.
 
-## 📊 Behavioral Features Analyzed
+## Known Issues
 
-### Keystroke Dynamics
-- **Timing Features**: Hold time, flight time, typing speed
-- **Rhythm Analysis**: Consistency, bursts, pauses
-- **N-gram Patterns**: Digraph and trigraph timing
-- **Pressure Dynamics**: Key force variations (if supported)
-- **Typing Style**: Speed variance, error patterns
+1. **pysqlcipher3 build requirement**: Requires the SQLCipher C library to build. Falls back to plain SQLite if unavailable.
+2. **Eel browser dependency**: Requires Chrome or Edge for the embedded web view.
+3. **TensorFlow startup time**: First launch may be slow due to TF initialization.
 
-### Mouse Behavior
-- **Movement Patterns**: Velocity, acceleration, jerk
-- **Click Dynamics**: Duration, pressure, timing
-- **Navigation Style**: Trajectory efficiency, curvature
-- **Behavioral Signatures**: Dwell time, scroll patterns
-- **Precision Metrics**: Target accuracy, movement smoothness
+## License
 
-### Advanced Analytics
-- **Temporal Patterns**: Time-of-day behavior variations
-- **Context Awareness**: Application-specific patterns
-- **Stress Indicators**: Behavioral changes under pressure
-- **Device Adaptation**: Multi-device behavioral profiles
-- **Environmental Factors**: External influence detection
+Provided as-is for educational and security research purposes.
 
-## 🛡️ Security Features
+---
 
-### Authentication Layers
-1. **Primary Authentication**: Username/password login
-2. **Behavioral Verification**: Continuous pattern matching
-3. **Anomaly Detection**: Real-time threat identification
-4. **Drift Monitoring**: Behavioral change adaptation
-5. **Session Security**: Encrypted token management
-
-### Privacy Protection
-- **Local Processing**: Behavioral analysis on-device when possible
-- **Data Encryption**: All stored data is encrypted
-- **Minimal Storage**: Only essential features are retained
-- **User Control**: Complete data deletion capabilities
-- **Transparency**: Clear data usage policies
-
-### Threat Detection
-- **Session Hijacking**: Detect unauthorized access attempts
-- **Credential Theft**: Identify behavior inconsistencies
-- **Insider Threats**: Monitor for behavioral anomalies
-- **Device Compromise**: Detect unusual input patterns
-- **Social Engineering**: Identify stressed/coerced behavior
-
-## 🔍 Troubleshooting
-
-### Common Issues
-
-#### Installation Problems
-```bash
-# TensorFlow installation issues
-pip install tensorflow==2.13.0 --no-cache-dir
-
-# Socket.IO connection problems
-pip install python-socketio[client]==5.8.0
-```
-
-#### Database Issues
-```bash
-# Reset database
-rm database/auth_system.db
-python -c "from app import create_app; app, socketio = create_app()"
-```
-
-#### Model Training Failures
-- Ensure sufficient calibration data (minimum 5 minutes)
-- Check feature extraction output for valid data
-- Verify model save directory permissions
-- Monitor memory usage during training
-
-#### WebSocket Connection Issues
-- Check firewall settings for port 5000
-- Verify browser WebSocket support
-- Test with different browsers
-- Check network proxy configurations
-
-### Performance Optimization
-
-#### Backend Performance
-- Use Redis for session storage in production
-- Implement model caching for faster predictions
-- Optimize database queries with indexing
-- Use background tasks for heavy processing
-
-#### Frontend Performance
-- Minimize JavaScript bundle size
-- Implement virtual scrolling for large datasets
-- Use Web Workers for intensive computations
-- Cache static assets with service workers
-
-#### Model Performance
-- Implement model quantization for faster inference
-- Use batch processing for multiple predictions
-- Cache feature extraction results
-- Optimize ensemble weights based on accuracy
-
-## 🚀 Production Deployment
-
-### Environment Setup
-```bash
-# Production environment
-export FLASK_ENV=production
-export DEBUG=False
-export SECRET_KEY="your-production-secret"
-
-# Database configuration
-export DATABASE_PATH="/secure/path/to/database.db"
-
-# SSL/TLS configuration
-export SSL_CERT_PATH="/path/to/cert.pem"
-export SSL_KEY_PATH="/path/to/key.pem"
-```
-
-### Security Hardening
-- Enable HTTPS with valid SSL certificates
-- Implement rate limiting and DDoS protection
-- Use secure session configuration
-- Enable CSRF protection
-- Implement content security policies
-- Regular security audits and updates
-
-### Scaling Considerations
-- Use load balancer for multiple instances
-- Implement database connection pooling
-- Use Redis for shared session storage
-- Consider microservices architecture for large deployments
-- Implement horizontal scaling for ML inference
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Development Guidelines
-- Follow PEP 8 for Python code style
-- Use ESLint for JavaScript code consistency
-- Write comprehensive tests for new features
-- Update documentation for API changes
-- Ensure backward compatibility when possible
-
-## 🔮 Future Enhancements
-
-### Planned Features
-- **Mobile Applications**: Native iOS and Android apps
-- **Biometric Integration**: Fingerprint and face recognition
-- **Voice Analysis**: Speech pattern authentication
-- **Advanced ML**: Deep learning and transformer models
-- **Cloud Integration**: AWS/Azure/GCP deployment options
-- **API Extensions**: RESTful API for third-party integration
-
-### Research Areas
-- **Federated Learning**: Privacy-preserving model training
-- **Adversarial Robustness**: Defense against spoofing attacks
-- **Cross-Device Learning**: Behavioral sync across devices
-- **Contextual Authentication**: Environment-aware security
-- **Quantum-Safe Cryptography**: Post-quantum security
-
-## 🎯 Quick Demo
-
-1. **Start the system**: `python app.py`
-2. **Open browser**: Navigate to `http://localhost:5000`
-3. **Register**: Create account with strong password
-4. **Calibrate**: Complete 10-minute behavioral training
-5. **Monitor**: Watch real-time authentication in dashboard
-6. **Test**: Try different typing/mouse patterns to see anomaly detection
-
-*Thank you*
+**Last Updated**: May 2026  
+**Version**: 2.0.0 (Desktop)
