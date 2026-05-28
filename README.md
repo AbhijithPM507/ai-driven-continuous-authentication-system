@@ -339,6 +339,25 @@ pyinstaller locksy.spec
 
 The output will be in the `dist/` directory as `Locksy.exe` (Windows) or a macOS bundle.
 
+### ⚠️ Antivirus Warning (Locksy.exe)
+
+When packaged as a standalone `.exe`, Windows Defender and other antivirus software **will flag `Locksy.exe` as a keylogger/trojan**. This is a **false positive** caused by:
+
+1. **pynput library**: The executable contains code that registers global keyboard and mouse hooks (`SetWindowsHookEx` / `GetMessage`). This is the same API used by malicious keyloggers, so AV engines flag it.
+2. **PyInstaller bundling**: Packing Python + libraries into a single `.exe` triggers heuristic detection because the binary structure resembles known malware packers.
+
+**What Locksy actually does:**
+- Captures only **timing metadata** (key press/release timestamps) — never the content of what was typed
+- All data stays **100% local** — no network transmission
+- The behavior monitoring is used solely for **authentication**, not surveillance
+
+**Mitigation:**
+- Add an exception for `Locksy.exe` in your antivirus settings
+- Or run from source with `python app.py` (no false positive since no PyInstaller bundle)
+- Or sign the executable with a code signing certificate (reduces but may not eliminate flags)
+
+We cannot whitelist the binary with AV vendors — you must set a local exclusion.
+
 ## Known Issues
 
 1. **pysqlcipher3 build requirement**: Requires the SQLCipher C library to build. Falls back to plain SQLite if unavailable.

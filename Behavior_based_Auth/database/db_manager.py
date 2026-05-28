@@ -2,6 +2,7 @@ import sqlite3
 import json
 import hashlib
 import hmac
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import os
@@ -38,8 +39,16 @@ class DatabaseManager:
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 username TEXT DEFAULT 'User',
                 calibration_complete INTEGER DEFAULT 0,
+                local_pin_hash TEXT,
+                local_pin_salt TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )''')
+            # Add columns if missing (migration)
+            try:
+                c.execute('SELECT local_pin_hash FROM profile LIMIT 1')
+            except sqlite3.OperationalError:
+                c.execute('ALTER TABLE profile ADD COLUMN local_pin_hash TEXT')
+                c.execute('ALTER TABLE profile ADD COLUMN local_pin_salt TEXT')
             c.execute('''CREATE TABLE IF NOT EXISTS behavioral_data (
                 data_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -157,3 +166,35 @@ class DatabaseManager:
             c.execute('SELECT * FROM model_metadata WHERE id = 1')
             row = c.fetchone()
             return dict(row) if row else None
+
+    def set_pin(self, pin: str):
+        salt = secrets.token_hex(16)
+        h = hashlib.sha256((salt + pin).encode()).hexdigest()
+        with self.get_connection() as conn:
+            c = conn.cursor()
+            c.execute('UPDATE profile SET local_pin_hash = ?, local_pin_salt = ? WHERE id = 1',
+                      (h, salt))
+            conn.commit()
+
+    def has_pin(self) -> bool:
+        with self.get_connection() as conn:
+            c = conn.cursor()
+            c.execute('SELECT local_pin_hash FROM profile WHERE id = 1')
+            row = c.fetchone()
+            return bool(row and row[0])
+
+    def verify_pin(self, pin: str) -> bool:
+        with self.get_connection() as conn:
+            c = conn.cursor()
+            c.execute('SELECT local_pin_hash, local_pin_salt FROM profile WHERE id = 1')
+            row = c.fetchone()
+            if not row or not row[0]:
+                return False
+            h = hashlib.sha256((row[1] + pin).encode()).hexdigest()
+            return h == row[0]
+
+    def clear_pin(self):
+        with self.get_connection() as conn:
+            c = conn.cursor()
+            c.execute('UPDATE profile SET local_pin_hash = NULL, local_pin_salt = NULL WHERE id = 1')
+            conn.commit()

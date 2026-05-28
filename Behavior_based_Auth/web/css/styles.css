@@ -2731,6 +2731,277 @@ body::before {
 }
 
 /* ==========================================================================
+   SOFT LOCK OVERLAY STYLES
+   ========================================================================== */
+
+.soft-lock-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.soft-lock-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2xl);
+    padding: var(--spacing-2xl);
+    max-width: 440px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 0 60px rgba(239, 68, 68, 0.2);
+    animation: fadeIn 0.4s ease-out;
+}
+
+.soft-lock-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(239, 68, 68, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto var(--spacing-lg);
+}
+
+.soft-lock-icon i {
+    font-size: 2.5rem;
+    color: var(--danger-color);
+}
+
+.soft-lock-box h2 {
+    font-size: var(--font-size-2xl);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-md);
+}
+
+.soft-lock-desc {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--spacing-xl);
+    line-height: 1.5;
+}
+
+.pin-section {
+    margin-bottom: var(--spacing-lg);
+}
+
+.pin-input-group {
+    display: flex;
+    gap: var(--spacing-md);
+    align-items: center;
+    justify-content: center;
+}
+
+.pin-input-group input {
+    padding: var(--spacing-md) var(--spacing-lg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: var(--font-size-lg);
+    text-align: center;
+    letter-spacing: 0.5em;
+    width: 200px;
+    outline: none;
+    transition: border-color var(--transition-normal);
+}
+
+.pin-input-group input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.pin-input-group .btn {
+    padding: var(--spacing-md) var(--spacing-xl);
+    flex-shrink: 0;
+}
+
+.pin-error {
+    color: var(--danger-color);
+    font-size: var(--font-size-sm);
+    margin-top: var(--spacing-md);
+}
+
+.override-section {
+    margin-bottom: var(--spacing-lg);
+}
+
+.override-desc {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--spacing-lg);
+}
+
+.override-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.override-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-lg);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border-color);
+    background: var(--bg-glass);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all var(--transition-normal);
+    width: 100%;
+    font-family: inherit;
+}
+
+.override-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.override-btn i {
+    font-size: var(--font-size-2xl);
+}
+
+.override-btn span {
+    font-size: var(--font-size-base);
+    font-weight: 600;
+}
+
+.override-btn small {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+}
+
+.tired-btn {
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.tired-btn:hover {
+    border-color: var(--accent-color);
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.tired-btn i {
+    color: var(--accent-color);
+}
+
+.guest-option {
+    display: flex;
+    gap: var(--spacing-md);
+    align-items: stretch;
+}
+
+.guest-btn {
+    flex: 1;
+    border-color: rgba(99, 102, 241, 0.3);
+}
+
+.guest-btn:hover {
+    border-color: var(--primary-color);
+    background: rgba(99, 102, 241, 0.1);
+}
+
+.guest-btn i {
+    color: var(--primary-color);
+}
+
+.duration-select {
+    padding: var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    min-width: 100px;
+    cursor: pointer;
+    outline: none;
+}
+
+.duration-select:focus {
+    border-color: var(--primary-color);
+}
+
+.active-override-status {
+    margin-top: var(--spacing-lg);
+    padding: var(--spacing-md);
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: var(--radius-lg);
+}
+
+.active-override-status p {
+    color: var(--secondary-color);
+    font-size: var(--font-size-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+}
+
+/* PIN Settings */
+.pin-settings .setting-description {
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--spacing-lg);
+}
+
+.pin-setup-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.pin-setup-group input {
+    padding: var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--bg-glass);
+    color: var(--text-primary);
+    font-size: var(--font-size-base);
+    outline: none;
+    transition: border-color var(--transition-normal);
+}
+
+.pin-setup-group input:focus {
+    border-color: var(--primary-color);
+}
+
+.pin-setup-group .btn {
+    align-self: flex-start;
+}
+
+.pin-setup-status {
+    margin-top: var(--spacing-md);
+    font-size: var(--font-size-sm);
+}
+
+.pin-setup-status.success {
+    color: var(--secondary-color);
+}
+
+.pin-setup-status.error {
+    color: var(--danger-color);
+}
+
+/* Print hide soft lock */
+@media print {
+    .soft-lock-overlay {
+        display: none !important;
+    }
+}
+
+/* ==========================================================================
    PRINT STYLES
    ========================================================================== */
 

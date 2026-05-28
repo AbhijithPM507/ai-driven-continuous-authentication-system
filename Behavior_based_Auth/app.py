@@ -7,7 +7,7 @@ import threading
 import time
 import logging
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from pynput import keyboard, mouse
@@ -38,7 +38,13 @@ drift_detector = BehavioralDriftDetector(
 ensemble: Optional[EnsembleBehavioralClassifier] = None
 is_calibrated = False
 monitoring_active = False
+
+anomaly_event_count = 0
 consecutive_anomalies = 0
+soft_lock_active = False
+soft_lock_verified = False
+monitoring_paused_until: Optional[datetime] = None
+tired_mode_until: Optional[datetime] = None
 
 pynput_buffer = {'keystroke': deque(), 'mouse': deque()}
 pynput_lock = threading.Lock()
@@ -166,12 +172,92 @@ def get_activity_log() -> list:
         pass
     return log
 
+@eel.expose
+def set_local_pin(pin: str) -> dict:
+    if not pin:
+        db.clear_pin()
+        logger.info("Local PIN cleared")
+        return {'success': True}
+    if len(pin) < 4:
+        return {'success': False, 'error': 'PIN must be at least 4 characters'}
+    db.set_pin(pin)
+    logger.info("Local PIN set")
+    return {'success': True}
+
+@eel.expose
+def has_local_pin() -> bool:
+    return db.has_pin()
+
+@eel.expose
+def verify_pin(pin: str) -> bool:
+    return db.verify_pin(pin)
+
+@eel.expose
+def dismiss_soft_lock() -> dict:
+    global soft_lock_active, soft_lock_verified
+    soft_lock_active = False
+    soft_lock_verified = True
+    logger.info("Soft lock dismissed after PIN verification")
+    return {'success': True}
+
+@eel.expose
+def enable_tired_mode() -> dict:
+    global tired_mode_until
+    tired_mode_until = datetime.now() + timedelta(hours=DesktopConfig.TIRED_MODE_DURATION_HOURS)
+    soft_lock_active = False
+    logger.info(f"Tired mode enabled until {tired_mode_until}")
+    db.log_event('tired_mode', {'until': tired_mode_until.isoformat()})
+    return {'success': True, 'until': tired_mode_until.isoformat()}
+
+@eel.expose
+def enable_guest_mode(duration_minutes: int) -> dict:
+    global monitoring_paused_until
+    monitoring_paused_until = datetime.now() + timedelta(minutes=duration_minutes)
+    soft_lock_active = False
+    logger.info(f"Guest mode enabled for {duration_minutes} minutes")
+    db.log_event('guest_mode', {'duration_minutes': duration_minutes,
+                                 'until': monitoring_paused_until.isoformat()})
+    return {'success': True, 'until': monitoring_paused_until.isoformat()}
+
+@eel.expose
+def get_lock_state() -> dict:
+    now = datetime.now()
+    result = {
+        'soft_lock_active': soft_lock_active,
+        'anomaly_event_count': anomaly_event_count,
+        'has_pin': db.has_pin(),
+    }
+    if tired_mode_until and now < tired_mode_until:
+        result['tired_mode_until'] = tired_mode_until.isoformat()
+    else:
+        result['tired_mode_until'] = None
+    if monitoring_paused_until and now < monitoring_paused_until:
+        result['monitoring_paused_until'] = monitoring_paused_until.isoformat()
+    else:
+        result['monitoring_paused_until'] = None
+    return result
+
+def get_effective_threshold() -> float:
+    now = datetime.now()
+    if tired_mode_until and now < tired_mode_until:
+        return DesktopConfig.SOFT_LOCK_THRESHOLD_TIRED
+    return DesktopConfig.DEFAULT_ANOMALY_THRESHOLD
+
 def perform_auth_check() -> dict:
-    global consecutive_anomalies
+    global consecutive_anomalies, anomaly_event_count, soft_lock_active
+
+    now = datetime.now()
+    if monitoring_paused_until and now < monitoring_paused_until:
+        return {'authenticity_score': 0.5, 'confidence': 0.0, 'anomaly_score': 0.0,
+                'anomaly_detected': False, 'alert_level': 0,
+                'alert_message': f'Monitoring paused until {monitoring_paused_until.isoformat()}',
+                'consecutive_anomalies': 0, 'soft_lock_active': False}
+
     if not ensemble or not ensemble.gru_model.is_trained:
         return {'authenticity_score': 0.5, 'confidence': 0.0, 'anomaly_score': 0.0,
                 'anomaly_detected': False, 'alert_level': 0, 'alert_message': 'Models not trained',
-                'consecutive_anomalies': 0}
+                'consecutive_anomalies': 0, 'soft_lock_active': False}
+
     try:
         ks_events = []
         mouse_events = []
@@ -180,76 +266,119 @@ def perform_auth_check() -> dict:
             mouse_events = list(pynput_buffer['mouse'])
             pynput_buffer['keystroke'].clear()
             pynput_buffer['mouse'].clear()
+
         if not ks_events and not mouse_events:
             if len(feature_history) < 5:
                 return {'authenticity_score': 0.5, 'confidence': 0.0, 'anomaly_score': 0.0,
                         'anomaly_detected': False, 'alert_level': 0, 'alert_message': 'Insufficient data',
-                        'consecutive_anomalies': 0}
+                        'consecutive_anomalies': 0, 'soft_lock_active': soft_lock_active}
             combined = feature_history[-1]
         else:
             ks_feat = extractor.extract_keystroke_features(ks_events) if ks_events else extractor._get_empty_keystroke_features()
             m_feat = extractor.extract_mouse_features(mouse_events) if mouse_events else extractor._get_empty_mouse_features()
             combined = extractor.get_combined_features(ks_feat, m_feat)
             feature_history.append(combined)
+
         if len(feature_history) < 5:
             return {'authenticity_score': 0.5, 'confidence': 0.0, 'anomaly_score': 0.0,
                     'anomaly_detected': False, 'alert_level': 0, 'alert_message': 'Building baseline',
-                    'consecutive_anomalies': 0}
+                    'consecutive_anomalies': 0, 'soft_lock_active': soft_lock_active}
+
         prediction = ensemble.predict_ensemble(list(feature_history))
         auth_score = prediction['ensemble']['authenticity_score']
         confidence = prediction['ensemble']['confidence']
         anomaly_score = 1.0 - auth_score
-        threshold = DesktopConfig.ANOMALY_SCORE_THRESHOLD
-        anomaly_detected = anomaly_score > threshold
+
+        effective_threshold = get_effective_threshold()
+        anomaly_detected = anomaly_score > effective_threshold
+
         if anomaly_detected:
             consecutive_anomalies += 1
-        else:
-            consecutive_anomalies = 0
-        alert_level = 0
-        alert_msg = 'Normal behavior'
-        if anomaly_detected:
+            alert_msg = 'Normal behavior'
+            alert_level = 0
+
             if consecutive_anomalies >= DesktopConfig.CONSECUTIVE_ANOMALIES_LIMIT:
-                alert_level = 3
-                alert_msg = 'Sustained anomalies - locking workstation'
-                logger.warning("Locking workstation due to sustained anomalies")
-                threading.Thread(target=lock_workstation, daemon=True).start()
+                anomaly_event_count += 1
+
+                if anomaly_event_count == 1:
+                    alert_level = 3
+                    alert_msg = 'First anomaly — hard locking workstation'
+                    logger.warning(f"Anomaly event #{anomaly_event_count}: hard locking workstation")
+                    db.log_event('hard_lock', {'anomaly_score': anomaly_score})
+                    threading.Thread(target=lock_workstation, daemon=True).start()
+                else:
+                    alert_level = 4
+                    alert_msg = 'Anomaly detected — soft lock activated'
+                    soft_lock_active = True
+                    logger.warning(f"Anomaly event #{anomaly_event_count}: soft lock activated")
+                    db.log_event('soft_lock', {'anomaly_score': anomaly_score,
+                                                'anomaly_event_count': anomaly_event_count})
             elif confidence > 0.7:
                 alert_level = 2
                 alert_msg = 'High confidence anomaly detected'
             else:
                 alert_level = 1
                 alert_msg = 'Low confidence anomaly detected'
+        else:
+            consecutive_anomalies = 0
+
         if anomaly_detected:
-            db.log_event('anomaly', {'anomaly_score': anomaly_score, 'confidence': confidence, 'auth_score': auth_score})
+            db.log_event('anomaly', {'anomaly_score': anomaly_score, 'confidence': confidence,
+                                      'auth_score': auth_score,
+                                      'anomaly_event_count': anomaly_event_count})
+
         return {'authenticity_score': float(auth_score), 'confidence': float(confidence),
                 'anomaly_score': float(anomaly_score), 'anomaly_detected': anomaly_detected,
                 'alert_level': alert_level, 'alert_message': alert_msg,
-                'consecutive_anomalies': consecutive_anomalies}
+                'consecutive_anomalies': consecutive_anomalies,
+                'soft_lock_active': soft_lock_active,
+                'anomaly_event_count': anomaly_event_count}
+
     except Exception as e:
         logger.error(f"Auth check error: {e}")
         return {'authenticity_score': 0.5, 'confidence': 0.0, 'anomaly_score': 0.5,
                 'anomaly_detected': False, 'alert_level': 0, 'alert_message': f'Error: {e}',
-                'consecutive_anomalies': 0}
+                'consecutive_anomalies': 0, 'soft_lock_active': soft_lock_active}
 
 def monitoring_loop():
     global monitoring_active
     monitoring_active = True
     while monitoring_active:
         try:
+            now = datetime.now()
+            if monitoring_paused_until and now >= monitoring_paused_until:
+                monitoring_paused_until = None
+                logger.info("Guest mode expired, monitoring resumed")
+
+            if tired_mode_until and now >= tired_mode_until:
+                tired_mode_until = None
+                logger.info("Tired mode expired, normal threshold restored")
+                db.log_event('tired_mode_expired', {})
+
             if is_calibrated and ensemble:
                 result = perform_auth_check()
                 eel.on_auth_update(result)
-                if result['alert_level'] >= 2:
+
+                if result['alert_level'] >= 2 and result['alert_level'] < 4:
                     eel.on_security_alert({'level': result['alert_level'],
                                            'message': result['alert_message'],
                                            'confidence': result['confidence']})
+
+                if result['alert_level'] == 4:
+                    eel.on_soft_lock({
+                        'anomaly_event_count': result['anomaly_event_count'],
+                        'anomaly_score': result['anomaly_score'],
+                        'has_pin': db.has_pin(),
+                    })
+
             time.sleep(DesktopConfig.FEATURE_UPDATE_INTERVAL)
         except Exception as e:
             logger.error(f"Monitoring loop: {e}")
             time.sleep(DesktopConfig.FEATURE_UPDATE_INTERVAL)
 
 def main():
-    global is_calibrated, ensemble
+    global is_calibrated, ensemble, anomaly_event_count
+
     is_calibrated = db.is_calibrated()
     if is_calibrated:
         try:
@@ -263,9 +392,13 @@ def main():
         except Exception as e:
             logger.error(f"Failed to load models: {e}")
             is_calibrated = False
+
+    anomaly_event_count = 0
     start_pynput_listeners()
+
     monitor_thread = threading.Thread(target=monitoring_loop, daemon=True)
     monitor_thread.start()
+
     eel.init('web')
     start_page = 'calib.html' if not is_calibrated else 'challenge.html'
     kwargs = {'size': (1400, 900), 'port': DesktopConfig.EEL_PORT}

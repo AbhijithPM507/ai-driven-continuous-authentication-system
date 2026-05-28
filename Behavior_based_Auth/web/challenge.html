@@ -296,10 +296,67 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="settings-card pin-settings">
+                            <h3>PIN Configuration</h3>
+                            <div class="setting-group">
+                                <p class="setting-description">Set a local PIN for soft lock identity verification.</p>
+                                <div class="pin-setup-group">
+                                    <input type="password" id="newPinInput" maxlength="20" placeholder="Enter new PIN" autocomplete="off">
+                                    <input type="password" id="confirmPinInput" maxlength="20" placeholder="Confirm PIN" autocomplete="off">
+                                    <button id="savePinBtn" class="btn btn-primary">Save PIN</button>
+                                    <button id="clearPinBtn" class="btn btn-secondary" style="display: none;">Remove PIN</button>
+                                </div>
+                                <p class="pin-setup-status" id="pinSetupStatus"></p>
+                            </div>
+                        </div>
                     </div>
                 </section>
             </div>
         </main>
+    </div>
+
+    <div class="soft-lock-overlay" id="softLockOverlay" style="display: none;">
+        <div class="soft-lock-box">
+            <div class="soft-lock-icon">
+                <i class="fas fa-lock"></i>
+            </div>
+            <h2>Anomaly Detected</h2>
+            <p class="soft-lock-desc">Unusual behavior pattern detected. Please verify your identity.</p>
+
+            <div class="pin-section" id="pinSection">
+                <div class="pin-input-group">
+                    <input type="password" id="pinInput" maxlength="20" placeholder="Enter your PIN" autocomplete="off">
+                    <button id="pinSubmitBtn" class="btn btn-primary">Verify</button>
+                </div>
+                <p class="pin-error" id="pinError" style="display: none;">Incorrect PIN. Try again.</p>
+            </div>
+
+            <div class="override-section" id="overrideSection" style="display: none;">
+                <p class="override-desc">Verification successful. Choose an override option:</p>
+                <div class="override-options">
+                    <button id="tiredModeBtn" class="override-btn tired-btn">
+                        <i class="fas fa-bed"></i>
+                        <span>I'm Tired</span>
+                        <small>Loosen threshold to 0.99 for 2 hours</small>
+                    </button>
+                    <div class="guest-option">
+                        <button id="guestModeBtn" class="override-btn guest-btn">
+                            <i class="fas fa-user-friends"></i>
+                            <span>Allow Guest Access</span>
+                        </button>
+                        <select id="guestDuration" class="duration-select">
+                            <option value="15">15 minutes</option>
+                            <option value="30" selected>30 minutes</option>
+                            <option value="60">60 minutes</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="active-override-status" id="activeOverrideStatus" style="display: none;">
+                <p><i class="fas fa-info-circle"></i> <span id="overrideStatusText"></span></p>
+            </div>
+        </div>
     </div>
 
     <div class="modal-overlay" id="securityAlertModal" style="display: none;">

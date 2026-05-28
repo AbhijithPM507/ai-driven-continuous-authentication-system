@@ -53,6 +53,22 @@ class DashboardManager {
         this.alertMessage = document.getElementById('alertMessage');
         this.alertDetails = document.getElementById('alertDetails');
         this.acknowledgeAlert = document.getElementById('acknowledgeAlert');
+        this.softLockOverlay = document.getElementById('softLockOverlay');
+        this.pinSection = document.getElementById('pinSection');
+        this.pinInput = document.getElementById('pinInput');
+        this.pinSubmitBtn = document.getElementById('pinSubmitBtn');
+        this.pinError = document.getElementById('pinError');
+        this.overrideSection = document.getElementById('overrideSection');
+        this.tiredModeBtn = document.getElementById('tiredModeBtn');
+        this.guestModeBtn = document.getElementById('guestModeBtn');
+        this.guestDuration = document.getElementById('guestDuration');
+        this.activeOverrideStatus = document.getElementById('activeOverrideStatus');
+        this.overrideStatusText = document.getElementById('overrideStatusText');
+        this.newPinInput = document.getElementById('newPinInput');
+        this.confirmPinInput = document.getElementById('confirmPinInput');
+        this.savePinBtn = document.getElementById('savePinBtn');
+        this.clearPinBtn = document.getElementById('clearPinBtn');
+        this.pinSetupStatus = document.getElementById('pinSetupStatus');
     }
 
     setupEventListeners() {
@@ -82,11 +98,19 @@ class DashboardManager {
         document.addEventListener('click', (e) => {
             if (!this.notificationBtn.contains(e.target)) this.notificationDropdown.style.display = 'none';
         });
+        this.pinSubmitBtn.addEventListener('click', () => this.handlePinSubmit());
+        this.pinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.handlePinSubmit(); });
+        this.tiredModeBtn.addEventListener('click', () => this.handleTiredMode());
+        this.guestModeBtn.addEventListener('click', () => this.handleGuestMode());
+        this.savePinBtn.addEventListener('click', () => this.handleSavePin());
+        this.clearPinBtn.addEventListener('click', () => this.handleClearPin());
     }
 
     startListening() {
         eel.on_auth_update(this.handleAuthResult.bind(this));
         eel.on_security_alert(this.handleSecurityAlert.bind(this));
+        eel.on_soft_lock(this.onSoftLock.bind(this));
+        setInterval(() => this.pollLockState(), 10000);
     }
 
     initializeCharts() {
@@ -262,6 +286,148 @@ class DashboardManager {
         const h = Math.floor(m / 60);
         if (h < 24) return `${h}h ago`;
         return `${Math.floor(h / 24)}d ago`;
+    }
+
+    onSoftLock(data) {
+        this.softLockOverlay.style.display = 'flex';
+        this.activeOverrideStatus.style.display = 'none';
+        this.pinError.style.display = 'none';
+        this.overrideSection.style.display = 'none';
+        this.pinInput.value = '';
+        this.pinInput.focus();
+
+        if (data.has_pin) {
+            this.pinSection.style.display = 'block';
+        } else {
+            this.pinSection.style.display = 'none';
+            this.overrideSection.style.display = 'block';
+        }
+    }
+
+    async handlePinSubmit() {
+        const pin = this.pinInput.value.trim();
+        if (!pin) return;
+
+        try {
+            const valid = await eel.verify_pin(pin)();
+            if (valid) {
+                this.pinError.style.display = 'none';
+                this.pinSection.style.display = 'none';
+                this.overrideSection.style.display = 'block';
+                await eel.dismiss_soft_lock()();
+            } else {
+                this.pinError.style.display = 'block';
+                this.pinInput.value = '';
+                this.pinInput.focus();
+            }
+        } catch (err) {
+            this.pinError.textContent = 'Error verifying PIN.';
+            this.pinError.style.display = 'block';
+        }
+    }
+
+    async handleTiredMode() {
+        try {
+            const result = await eel.enable_tired_mode()();
+            if (result.success) {
+                this.softLockOverlay.style.display = 'none';
+            }
+        } catch (err) {
+            console.error('Tired mode error:', err);
+        }
+    }
+
+    async handleGuestMode() {
+        const minutes = parseInt(this.guestDuration.value, 10);
+        try {
+            const result = await eel.enable_guest_mode(minutes)();
+            if (result.success) {
+                this.softLockOverlay.style.display = 'none';
+            }
+        } catch (err) {
+            console.error('Guest mode error:', err);
+        }
+    }
+
+    async pollLockState() {
+        try {
+            const state = await eel.get_lock_state()();
+            if (state.soft_lock_active) {
+                this.softLockOverlay.style.display = 'flex';
+            }
+            if (state.tired_mode_until) {
+                const until = new Date(state.tired_mode_until);
+                this.activeOverrideStatus.style.display = 'block';
+                this.overrideStatusText.textContent = `Tired mode active until ${until.toLocaleTimeString()}`;
+            } else if (state.monitoring_paused_until) {
+                const until = new Date(state.monitoring_paused_until);
+                this.activeOverrideStatus.style.display = 'block';
+                this.overrideStatusText.textContent = `Guest mode active until ${until.toLocaleTimeString()}`;
+            } else {
+                this.activeOverrideStatus.style.display = 'none';
+            }
+            this.updatePinSettingsUI(state.has_pin);
+        } catch (err) {
+            console.error('Poll lock state error:', err);
+        }
+    }
+
+    updatePinSettingsUI(hasPin) {
+        if (!this.savePinBtn) return;
+        if (hasPin) {
+            this.savePinBtn.textContent = 'Update PIN';
+            this.clearPinBtn.style.display = 'inline-flex';
+        } else {
+            this.savePinBtn.textContent = 'Save PIN';
+            this.clearPinBtn.style.display = 'none';
+        }
+    }
+
+    async handleSavePin() {
+        const pin = this.newPinInput.value.trim();
+        const confirm = this.confirmPinInput.value.trim();
+
+        if (!pin || pin.length < 4) {
+            this.pinSetupStatus.textContent = 'PIN must be at least 4 characters.';
+            this.pinSetupStatus.className = 'pin-setup-status error';
+            return;
+        }
+        if (pin !== confirm) {
+            this.pinSetupStatus.textContent = 'PINs do not match.';
+            this.pinSetupStatus.className = 'pin-setup-status error';
+            return;
+        }
+
+        try {
+            const result = await eel.set_local_pin(pin)();
+            if (result.success) {
+                this.pinSetupStatus.textContent = 'PIN saved successfully.';
+                this.pinSetupStatus.className = 'pin-setup-status success';
+                this.newPinInput.value = '';
+                this.confirmPinInput.value = '';
+                this.updatePinSettingsUI(true);
+            } else {
+                this.pinSetupStatus.textContent = result.error || 'Failed to save PIN.';
+                this.pinSetupStatus.className = 'pin-setup-status error';
+            }
+        } catch (err) {
+            this.pinSetupStatus.textContent = 'Error saving PIN.';
+            this.pinSetupStatus.className = 'pin-setup-status error';
+        }
+    }
+
+    async handleClearPin() {
+        try {
+            const result = await eel.set_local_pin('')();
+            if (result.success) {
+                this.pinSetupStatus.textContent = 'PIN removed.';
+                this.pinSetupStatus.className = 'pin-setup-status success';
+                this.updatePinSettingsUI(false);
+            }
+        } catch (err) {
+            this.pinSetupStatus.textContent = 'Error removing PIN.';
+            this.pinSetupStatus.className = 'pin-setup-status error';
+        }
     }
 }
 

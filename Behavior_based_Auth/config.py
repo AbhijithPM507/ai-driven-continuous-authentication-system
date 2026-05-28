@@ -35,3 +35,9 @@ class DesktopConfig:
     FEATURE_UPDATE_INTERVAL = 5
 
     EEL_PORT = 8080
+
+    # Progressive Soft Lock thresholds
+    SOFT_LOCK_THRESHOLD_TIRED = 0.99
+    TIRED_MODE_DURATION_HOURS = 2
+    GUEST_MODE_OPTIONS_MINUTES = [15, 30, 60]
+    DEFAULT_ANOMALY_THRESHOLD = 0.8
