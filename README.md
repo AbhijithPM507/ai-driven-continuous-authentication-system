@@ -1,6 +1,6 @@
 # Locksy — Continuous Behavioral Authentication
 
-A fully offline, standalone desktop application that continuously authenticates the user by analyzing keystroke dynamics and mouse behavior using an ensemble of machine learning models. All data stays on the local machine — no network dependencies.
+A fully online, standalone desktop application that continuously authenticates the user by analyzing keystroke dynamics and mouse behavior using an ensemble of machine learning models. All data stays on the local machine — no network dependencies.
 
 ## Table of Contents
 
