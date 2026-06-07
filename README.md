@@ -370,5 +370,5 @@ Provided as-is for educational and security research purposes.
 
 ---
 
-**Last Updated**: June 2028 
+**Last Updated**: June 2026 
 **Version**: 2.0.0 (Desktop)
